@@ -17,6 +17,7 @@ struct Cli {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    println!("Day 1");
     let args = Cli::parse();
 
     let filename = &args.file;
@@ -57,21 +58,15 @@ fn main() -> Result<(), Box<dyn Error>> {
                 .cloned()
                 .fold([0_usize; 3], |mut tops, mut next| {
                     if next > tops[0] {
-                        let t = tops[0];
-                        tops[0] = next;
-                        next = t;
+                        std::mem::swap(&mut tops[0], &mut next);
                     }
 
                     if next > tops[1] {
-                        let t = tops[1];
-                        tops[1] = next;
-                        next = t;
+                        std::mem::swap(&mut tops[1], &mut next);
                     }
 
                     if next > tops[2] {
-                        let t = tops[2];
                         tops[2] = next;
-                        next = t;
                     }
 
                     tops
