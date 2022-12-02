@@ -11,6 +11,9 @@ struct Cli {
     /// Disable INFO messages, WARN and ERROR will remain
     #[clap(short = 'f', long = "file")]
     pub(crate) file: String,
+
+    #[clap(short = 't', long = "top-three")]
+    pub(crate) top_three: bool,
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -44,8 +47,39 @@ fn main() -> Result<(), Box<dyn Error>> {
         counts.push(current_count);
     }
 
-    let max_count = counts.into_iter().max().unwrap_or_default();
+    let max_count = counts.iter().max().cloned().unwrap_or_default();
     println!("Max Calories: {max_count}");
+
+    if args.top_three {
+        let top_three: [usize; 3] =
+            counts
+                .iter()
+                .cloned()
+                .fold([0_usize; 3], |mut tops, mut next| {
+                    if next > tops[0] {
+                        let t = tops[0];
+                        tops[0] = next;
+                        next = t;
+                    }
+
+                    if next > tops[1] {
+                        let t = tops[1];
+                        tops[1] = next;
+                        next = t;
+                    }
+
+                    if next > tops[2] {
+                        let t = tops[2];
+                        tops[2] = next;
+                        next = t;
+                    }
+
+                    tops
+                });
+
+        let top_three = top_three[0] + top_three[1] + top_three[2];
+        println!("Top Three Calories: {top_three}");
+    }
 
     Ok(())
 }
