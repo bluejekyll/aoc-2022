@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::ops::{Range, RangeInclusive};
+use std::ops::RangeInclusive;
 
 use clap::Parser;
 
@@ -17,6 +17,11 @@ struct Cli {
 fn either_contains_full(clean1: RangeInclusive<usize>, clean2: RangeInclusive<usize>) -> bool {
     (clean1.contains(clean2.start()) && clean1.contains(clean2.end()))
         || (clean2.contains(clean1.start()) && clean2.contains(clean1.end()))
+}
+
+fn either_contains_any(clean1: RangeInclusive<usize>, clean2: RangeInclusive<usize>) -> bool {
+    (clean1.contains(clean2.start()) || clean1.contains(clean2.end()))
+        || (clean2.contains(clean1.start()) || clean2.contains(clean1.end()))
 }
 
 fn parse_line(line: String) -> (RangeInclusive<usize>, RangeInclusive<usize>) {
@@ -56,6 +61,19 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("part 1 score: {part1_score}");
 
+    // part 2
+    let file = BufReader::new(File::open(filename)?);
+
+    let part2_score: usize = file
+        .lines()
+        .map(Result::unwrap)
+        .map(parse_line)
+        .map(|(r1, r2)| either_contains_any(r1, r2))
+        .map(usize::from)
+        .sum();
+
+    println!("part 2 score: {part2_score}");
+
     Ok(())
 }
 
@@ -77,5 +95,15 @@ mod tests {
     }
 
     #[test]
-    fn test_example_part2() {}
+    fn test_example_part2() {
+        assert!(!either_contains_any(2..=4, 6..=8));
+        assert!(!either_contains_any(2..=3, 4..=5));
+        assert!(either_contains_any(5..=7, 7..=9));
+        assert!(either_contains_any(2..=8, 3..=7));
+        assert!(either_contains_any(6..=6, 4..=6));
+        assert!(either_contains_any(2..=6, 4..=8));
+
+        // made up ones
+        assert!(either_contains_full(6..=6, 6..=6));
+    }
 }
