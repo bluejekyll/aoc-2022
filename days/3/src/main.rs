@@ -36,6 +36,16 @@ fn score(rucksack: &[u8]) -> usize {
     0
 }
 
+fn badge_score(r1: &[u8], r2: &[u8], r3: &[u8]) -> usize {
+    for r1ch in r1 {
+        if r2.contains(r1ch) && r3.contains(r1ch) {
+            return priority(*r1ch);
+        }
+    }
+
+    0
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     println!("{}", env!("CARGO_PKG_NAME"));
     let args = Cli::parse();
@@ -51,6 +61,21 @@ fn main() -> Result<(), Box<dyn Error>> {
         .sum();
 
     println!("part1 score: {part1_score}");
+
+    // part 2
+    let file = BufReader::new(File::open(filename)?);
+    let mut lines = file.lines().peekable();
+    let mut part2_score = 0usize;
+
+    while let Some(_) = lines.peek() {
+        let r1 = lines.next().unwrap()?;
+        let r2 = lines.next().unwrap()?;
+        let r3 = lines.next().unwrap()?;
+
+        part2_score += badge_score(r1.as_bytes(), r2.as_bytes(), r3.as_bytes());
+    }
+
+    println!("part2 score: {part2_score}");
 
     Ok(())
 }
@@ -78,5 +103,25 @@ mod tests {
         assert_eq!(score(b"wMqvLMZHhHMvwLHjbvcjnnSBnvTQFn"), 22);
         assert_eq!(score(b"ttgJtRGJQctTZtZT"), 20);
         assert_eq!(score(b"CrZsJsPPZsGzwwsLwLmpwMDw"), 19);
+    }
+
+    #[test]
+    fn test_example_part2() {
+        assert_eq!(
+            badge_score(
+                b"vJrwpWtwJgWrhcsFMMfFFhFp",
+                b"jqHRNqRjqzjGDLGLrsFMfFZSrLrFZsSL",
+                b"PmmdzqPrVvPwwTWBwg"
+            ),
+            18
+        );
+        assert_eq!(
+            badge_score(
+                b"wMqvLMZHhHMvwLHjbvcjnnSBnvTQFn",
+                b"ttgJtRGJQctTZtZT",
+                b"CrZsJsPPZsGzwwsLwLmpwMDw"
+            ),
+            52
+        );
     }
 }
