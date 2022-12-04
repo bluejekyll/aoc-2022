@@ -11,7 +11,7 @@ const LOSS: usize = 0;
 
 /// Cli
 #[derive(Debug, Parser)]
-#[clap(name = "Day 1", version, about)]
+#[clap(name = "Advent of Code", version, about)]
 struct Cli {
     /// Disable INFO messages, WARN and ERROR will remain
     #[clap(short = 'f', long = "file")]
