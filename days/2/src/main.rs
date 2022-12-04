@@ -115,7 +115,7 @@ fn score_round_for_end(opponent: Rochambeau, end: End) -> usize {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    println!("Day 2");
+    println!("{}", env!("CARGO_PKG_NAME"));
     let args = Cli::parse();
 
     let filename = &args.file;

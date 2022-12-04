@@ -17,7 +17,7 @@ struct Cli {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    println!("Day 1");
+    println!("{}", env!("CARGO_PKG_NAME"));
     let args = Cli::parse();
 
     let filename = &args.file;
