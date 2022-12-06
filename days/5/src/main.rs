@@ -216,7 +216,7 @@ mod tests {
         let columns = parse_column_offsets("1 2 3 4 5 6 7 8 9");
         let row = parse_stack_row("D E A D B E E F Y", &columns);
 
-        assert_eq!(&row, r"DEADBEEFY".as_bytes());
+        assert_eq!(&row, b"DEADBEEFY");
     }
 
     #[test]
@@ -224,7 +224,7 @@ mod tests {
         let mov = parse_move("move 1 from 2 to 3");
 
         assert_eq!(mov.count, 1);
-        assert_eq!(mov.from, 2);
-        assert_eq!(mov.to, 3);
+        assert_eq!(mov.from, 1);
+        assert_eq!(mov.to, 2);
     }
 }
