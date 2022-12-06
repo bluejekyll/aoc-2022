@@ -153,11 +153,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
     }
 
-    // now do all the swaps
-    for line in lines {
-        let line = line?;
-        let mov = parse_move(&line);
+    let mut columns_part2 = columns.clone();
 
+    // collect all the moves
+    let moves = lines
+        .map(|line| line.unwrap())
+        .map(|line| parse_move(&line))
+        .collect::<Vec<Move>>();
+
+    // now do all the swaps
+    for mov in &moves {
         let split_at_idx = columns[mov.from].len() - mov.count;
         let taken = columns[mov.from].split_off(split_at_idx);
 
@@ -172,8 +177,25 @@ fn main() -> Result<(), Box<dyn Error>> {
         .collect::<Vec<_>>();
 
     let top_of_stacks = String::from_utf8(top_of_stacks).expect("bad characters");
+    println!("part 1, top of stacks: {top_of_stacks}");
 
-    println!("top of stacks: {top_of_stacks}");
+    // part 2
+    for mov in &moves {
+        let split_at_idx = columns_part2[mov.from].len() - mov.count;
+        let taken = columns_part2[mov.from].split_off(split_at_idx);
+
+        for took in taken.into_iter() {
+            columns_part2[mov.to].push(took);
+        }
+    }
+
+    let top_of_stacks = columns_part2
+        .iter()
+        .map(|stack| *stack.last().expect("nothing in this stack"))
+        .collect::<Vec<_>>();
+
+    let top_of_stacks = String::from_utf8(top_of_stacks).expect("bad characters");
+    println!("part 2, top of stacks: {top_of_stacks}");
 
     Ok(())
 }
