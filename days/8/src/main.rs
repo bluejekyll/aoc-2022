@@ -29,6 +29,42 @@
 //!
 //! Your puzzle answer was 1809.
 //!
+//! --- Part Two ---
+//! Content with the amount of tree cover available, the Elves just need to know the best spot to build their tree house: they would like to be able to see a lot of trees.
+//!
+//! To measure the viewing distance from a given tree, look up, down, left, and right from that tree; stop if you reach an edge or at the first tree that is the same height or taller than the tree under consideration. (If a tree is right on the edge, at least one of its viewing distances will be zero.)
+//!
+//! The Elves don't care about distant trees taller than those found by the rules above; the proposed tree house has large eaves to keep it dry, so they wouldn't be able to see higher than the tree house anyway.
+//!
+//! In the example above, consider the middle 5 in the second row:
+//!
+//! 30373
+//! 25512
+//! 65332
+//! 33549
+//! 35390
+//! Looking up, its view is not blocked; it can see 1 tree (of height 3).
+//! Looking left, its view is blocked immediately; it can see only 1 tree (of height 5, right next to it).
+//! Looking right, its view is not blocked; it can see 2 trees.
+//! Looking down, its view is blocked eventually; it can see 2 trees (one of height 3, then the tree of height 5 that blocks its view).
+//! A tree's scenic score is found by multiplying together its viewing distance in each of the four directions. For this tree, this is 4 (found by multiplying 1 * 1 * 2 * 2).
+//!
+//! However, you can do even better: consider the tree of height 5 in the middle of the fourth row:
+//!
+//! 30373
+//! 25512
+//! 65332
+//! 33549
+//! 35390
+//! Looking up, its view is blocked at 2 trees (by another tree with a height of 5).
+//! Looking left, its view is not blocked; it can see 2 trees.
+//! Looking down, its view is also not blocked; it can see 1 tree.
+//! Looking right, its view is blocked at 2 trees (by a massive tree of height 9).
+//! This tree's scenic score is 8 (2 * 2 * 1 * 2); this is the ideal spot for the tree house.
+//!
+//! Consider each tree on your map. What is the highest scenic score possible for any tree?
+//!
+//! Your puzzle answer was 479400.
 
 use std::collections::HashSet;
 use std::error::Error;
@@ -177,6 +213,68 @@ fn get_visible_trees(grid: &Vec<Vec<usize>>) -> HashSet<Tree> {
     visible_trees
 }
 
+fn calculate_tree_visibility(grid: &Vec<Vec<usize>>, tree: Tree) -> usize {
+    let rows = grid.len();
+    let columns = grid[0].len();
+
+    let mut left_view = 0;
+    let mut right_view = 0;
+    let mut up_view = 0;
+    let mut down_view = 0;
+
+    let compare = |row: usize, col: usize| grid[row][col] >= grid[tree.row][tree.col];
+
+    // look left
+    for col in (0..tree.col).rev() {
+        left_view += 1;
+        if compare(tree.row, col) {
+            break;
+        };
+    }
+
+    // look right
+    for col in tree.col + 1..columns {
+        right_view += 1;
+        if compare(tree.row, col) {
+            break;
+        };
+    }
+
+    // look up
+    for row in (0..tree.row).rev() {
+        up_view += 1;
+        if compare(row, tree.col) {
+            break;
+        };
+    }
+
+    // look down
+    for row in tree.row + 1..rows {
+        down_view += 1;
+        if compare(row, tree.col) {
+            break;
+        };
+    }
+
+    left_view * right_view * up_view * down_view
+}
+
+fn calculate_max_view_score(grid: &Vec<Vec<usize>>) -> usize {
+    grid.iter()
+        .enumerate()
+        .map(|(row, row_vec)| {
+            row_vec.iter().enumerate().map(move |(col, height)| Tree {
+                height: *height,
+                row,
+                col,
+            })
+        })
+        .flatten()
+        .map(|tree| calculate_tree_visibility(&grid, tree))
+        .max()
+        .expect("no Tree view values found")
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     println!("{}", env!("CARGO_PKG_NAME"));
     let args = Cli::parse();
@@ -190,6 +288,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let part1_count = visible_trees.len();
     println!("part1, count of visible trees: {part1_count}");
 
+    let max_view_score = calculate_max_view_score(&grid);
+    println!("part2, max view score: {max_view_score}");
+
     Ok(())
 }
 
@@ -197,17 +298,17 @@ fn main() -> Result<(), Box<dyn Error>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_example_part1() {
-        let data = r#"
+    const DATA: &str = r#"
 30373
 25512
 65332
 33549
 35390
-"#
-        .to_string();
-        let data = BufReader::new(data.as_bytes());
+"#;
+
+    #[test]
+    fn test_example_part1() {
+        let data = BufReader::new(DATA.as_bytes());
 
         let grid = build_grid(data).unwrap();
 
@@ -215,5 +316,15 @@ mod tests {
         assert_eq!(grid.len(), 5);
         assert_eq!(grid[0].len(), 5);
         assert_eq!(get_visible_trees(&grid).len(), 21);
+    }
+
+    #[test]
+    fn test_example_part2() {
+        let data = BufReader::new(DATA.as_bytes());
+
+        let grid = build_grid(data).unwrap();
+
+        let max_view_score = calculate_max_view_score(&grid);
+        assert_eq!(max_view_score, 8)
     }
 }
