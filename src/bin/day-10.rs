@@ -311,6 +311,8 @@
 //! ######......######......######......####
 //! #######.......#######.......#######.....
 //! Render the image given by your program. What eight capital letters appear on your CRT?
+//!
+//! Your puzzle answer was BRJLFULP.
 
 use std::error::Error;
 use std::fmt::Write;
@@ -415,7 +417,6 @@ fn render_image(reader: impl BufRead, crt_rows: usize) -> Result<String, Box<dyn
         }
 
         let instruction = parse_instruction(&line);
-        println!("begin instruction: {instruction:?}");
 
         for _ in 0..instruction.to_cycles() {
             let pixel = (cycle_count % CRT_ROW_WIDTH) as isize;
@@ -436,13 +437,6 @@ fn render_image(reader: impl BufRead, crt_rows: usize) -> Result<String, Box<dyn
                 }
             }
 
-            println!(
-                "cycle: {cycle_count} pixel: {pixel} register: {register} diff: {}",
-                register.abs_diff(pixel as isize)
-            );
-            println!("current_sprite: {current_sprite}");
-            println!("current_pixels: {current_pixels}");
-
             cycle_count += 1;
             if cycle_count >= row_end {
                 writeln!(&mut rendered_image, "{current_pixels}")?;
@@ -456,7 +450,6 @@ fn render_image(reader: impl BufRead, crt_rows: usize) -> Result<String, Box<dyn
         }
 
         register += instruction.to_value();
-        println!("end {instruction:?}: {register}");
     }
 
     Ok(rendered_image)
@@ -474,7 +467,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     println!("part 1 strength: {strength}");
 
     let reader = BufReader::new(File::open(filename)?);
-    let image = render_image(reader, CRT_ROW_WIDTH)?;
+    let image = render_image(reader, 6)?;
     println!("part 2, the image");
     println!("{image}");
 
