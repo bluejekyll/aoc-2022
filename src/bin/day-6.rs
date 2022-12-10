@@ -28,7 +28,6 @@
 //! zcfzfwzzqfrljwzlrfnpqdbhtmscgvjw: first marker after character 11
 //! How many characters need to be processed before the first start-of-packet marker is detected?
 //!
-//! Your puzzle answer was 1816.
 //!
 //! --- Part Two ---
 //! Your device's communication system is correctly detecting packets, but still isn't working. It looks like it also needs to look for messages.
@@ -44,7 +43,6 @@
 //! zcfzfwzzqfrljwzlrfnpqdbhtmscgvjw: first marker after character 26
 //! How many characters need to be processed before the first start-of-message marker is detected?
 //!
-//! Your puzzle answer was 2625.
 
 use std::error::Error;
 use std::fs::File;

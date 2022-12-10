@@ -27,8 +27,6 @@
 //!
 //! Consider your map; how many trees are visible from outside the grid?
 //!
-//! Your puzzle answer was 1809.
-//!
 //! --- Part Two ---
 //! Content with the amount of tree cover available, the Elves just need to know the best spot to build their tree house: they would like to be able to see a lot of trees.
 //!
@@ -64,7 +62,6 @@
 //!
 //! Consider each tree on your map. What is the highest scenic score possible for any tree?
 //!
-//! Your puzzle answer was 479400.
 
 use std::collections::HashSet;
 use std::error::Error;

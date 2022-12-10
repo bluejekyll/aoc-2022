@@ -187,8 +187,6 @@
 //!
 //! Find the signal strength during the 20th, 60th, 100th, 140th, 180th, and 220th cycles. What is the sum of these six signal strengths?
 //!
-//! Your puzzle answer was 12980.
-//!
 //! --- Part Two ---
 //! It seems like the X register controls the horizontal position of a sprite. Specifically, the sprite is 3 pixels wide, and the X register sets the horizontal position of the middle of that sprite. (In this system, there is no such thing as "vertical position": if the sprite's horizontal position puts its pixels where the CRT is currently drawing, then those pixels will be drawn.)
 //!
@@ -311,8 +309,6 @@
 //! ######......######......######......####
 //! #######.......#######.......#######.....
 //! Render the image given by your program. What eight capital letters appear on your CRT?
-//!
-//! Your puzzle answer was BRJLFULP.
 
 use std::error::Error;
 use std::fmt::Write;

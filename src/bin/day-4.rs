@@ -39,8 +39,6 @@
 //!
 //! In how many assignment pairs does one range fully contain the other?
 //!
-//! Your puzzle answer was 556.
-//!
 //! --- Part Two ---
 //! It seems like there is still quite a bit of duplicate work planned. Instead, the Elves would like to know the number of pairs that overlap at all.
 //!
@@ -54,7 +52,6 @@
 //!
 //! In how many assignment pairs do the ranges overlap?
 //!
-//! Your puzzle answer was 876.
 
 use std::error::Error;
 use std::fs::File;

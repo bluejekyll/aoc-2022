@@ -25,8 +25,6 @@
 //!
 //! What would your total score be if everything goes exactly according to your strategy guide?
 //!
-//! Your puzzle answer was 12276.
-//!
 //! --- Part Two ---
 //! The Elf finishes helping with the tent and sneaks back over to you. "Anyway, the second column says how the round needs to end: X means you need to lose, Y means you need to end the round in a draw, and Z means you need to win. Good luck!"
 //!
@@ -39,7 +37,6 @@
 //!
 //! Following the Elf's instructions for the second column, what would your total score be if everything goes exactly according to your strategy guide?
 //!
-//! Your puzzle answer was 9975.
 
 use std::error::Error;
 use std::fs::File;
