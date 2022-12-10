@@ -239,8 +239,6 @@
 //!
 //! Simulate your complete hypothetical series of motions. How many positions does the tail of the rope visit at least once?
 //!
-//! Your puzzle answer was 6642.
-//!
 //! --- Part Two ---
 //!
 //! A rope snaps! Suddenly, the river is getting a lot closer than you remember. The bridge is still there, but some of the ropes that broke are now whipping toward you as you fall through the air!
@@ -727,28 +725,45 @@ impl Position {
         }
     }
 
-    fn catch_up(&mut self, other: &Position) {
-        if other.x > self.x && (other.x - self.x) > 1 {
-            self.x += 1;
-            if self.y != other.y {
-                self.y = other.y;
-            }
-        } else if other.x < self.x && (self.x - other.x) > 1 {
-            self.x -= 1;
-            if self.y != other.y {
-                self.y = other.y;
-            }
-        } else if other.y > self.y && (other.y - self.y) > 1 {
-            self.y += 1;
-            if self.x != other.x {
-                self.x = other.x;
-            }
-        } else if other.y < self.y && (self.y - other.y) > 1 {
-            self.y -= 1;
-            if self.x != other.x {
-                self.x = other.x;
+    fn catch_up(&mut self, other: &Position) -> bool {
+        fn mov_and_diag(axis1: (&mut isize, isize), axis2: (&mut isize, isize)) -> bool {
+            let a = axis1.0;
+            let b = axis1.1;
+
+            let c = axis2.0;
+            let d = axis2.1;
+
+            if *a > b && *a - b > 1 {
+                *a -= 1;
+
+                if *c > d {
+                    *c -= 1;
+                } else if *c < d {
+                    *c += 1;
+                }
+                true
+            } else if *a < b && b - *a > 1 {
+                *a += 1;
+
+                if *c > d {
+                    *c -= 1;
+                } else if *c < d {
+                    *c += 1;
+                }
+                true
+            } else {
+                false
             }
         }
+
+        mov_and_diag((&mut self.x, other.x), (&mut self.y, other.y))
+            || mov_and_diag((&mut self.y, other.y), (&mut self.x, other.x))
+    }
+}
+
+impl std::fmt::Display for Position {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({},{})", self.x, self.y)
     }
 }
 
@@ -778,9 +793,10 @@ fn calculate_moves(reader: impl BufRead, tail_len: usize) -> Result<usize, Box<d
         for _ in 0..count {
             head.mov(&direction);
             let mut prev = head.clone();
-            for tail in &mut ropes {
-                tail.catch_up(&prev);
-                prev = tail.clone();
+
+            for next in ropes.iter_mut() {
+                next.catch_up(&prev);
+                prev = next.clone();
             }
             unique_tail_positions.insert(ropes.last().unwrap().clone());
         }
