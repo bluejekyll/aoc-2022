@@ -217,9 +217,9 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use clap::Parser;
-use nom::character::complete::alphanumeric1;
 use nom::character::complete::anychar;
-use nom::multi::fold_many0;
+use nom::character::complete::{alphanumeric1, newline};
+use nom::multi::{fold_many0, many1};
 use nom::sequence::{pair, preceded};
 use nom::{
     branch::alt,
@@ -243,7 +243,10 @@ struct Cli {
 }
 
 struct Monkey {
+    id: usize,
     items: Vec<usize>,
+    anxiety: Instruction,
+    test: Test,
 }
 
 //   Starting items: 79, 98
@@ -251,7 +254,7 @@ fn parse_items(input: &str) -> IResult<&str, Vec<usize>> {
     let (input, _) = space1(input)?;
     let (input, _) = tag("Starting items: ")(input)?;
 
-    fold_many0(
+    let (input, items) = fold_many0(
         pair(
             character::complete::u32,
             opt(pair(character::complete::char(','), space1)),
@@ -261,7 +264,10 @@ fn parse_items(input: &str) -> IResult<&str, Vec<usize>> {
             items.push(item as usize);
             items
         },
-    )(input)
+    )(input)?;
+
+    let (input, _) = opt(newline)(input)?;
+    Ok((input, items))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -303,6 +309,7 @@ fn parse_instruction(input: &str) -> IResult<&str, Instruction> {
     let (input, var1) = alphanumeric1(input)?;
     let (input, operation) = preceded(space1, anychar)(input)?;
     let (input, var2) = preceded(space1, alphanumeric1)(input)?;
+    let (input, _) = opt(newline)(input)?;
 
     let arg1 = parse_literal(var1)?.1;
     let arg2 = parse_literal(var2)?.1;
@@ -316,6 +323,51 @@ fn parse_instruction(input: &str) -> IResult<&str, Instruction> {
     Ok((input, Instruction { arg1, op, arg2 }))
 }
 
+struct Test {
+    divisor: usize,
+    true_monkey: usize,
+    false_monkey: usize,
+}
+
+//   Test: divisible by 23
+//     If true: throw to monkey 2
+//     If false: throw to monkey 3
+fn parse_test(input: &str) -> IResult<&str, Test> {
+    let (input, _) = preceded(space1, tag("Test:"))(input)?;
+    let (input, _) = preceded(space1, tag("divisible"))(input)?;
+    let (input, _) = preceded(space1, tag("by"))(input)?;
+    let (input, _) = space1(input)?;
+    let (input, divisor) = map(character::complete::u32, |val| val as usize)(input)?;
+    let (input, _) = newline(input)?;
+
+    let (input, _) = preceded(space1, tag("If"))(input)?;
+    let (input, _) = preceded(space1, tag("true:"))(input)?;
+    let (input, _) = preceded(space1, tag("throw"))(input)?;
+    let (input, _) = preceded(space1, tag("to"))(input)?;
+    let (input, _) = preceded(space1, tag("monkey"))(input)?;
+    let (input, _) = space1(input)?;
+    let (input, true_monkey) = map(character::complete::u32, |val| val as usize)(input)?;
+    let (input, _) = newline(input)?;
+
+    let (input, _) = preceded(space1, tag("If"))(input)?;
+    let (input, _) = preceded(space1, tag("false:"))(input)?;
+    let (input, _) = preceded(space1, tag("throw"))(input)?;
+    let (input, _) = preceded(space1, tag("to"))(input)?;
+    let (input, _) = preceded(space1, tag("monkey"))(input)?;
+    let (input, _) = space1(input)?;
+    let (input, false_monkey) = map(character::complete::u32, |val| val as usize)(input)?;
+    let (input, _) = opt(newline)(input)?;
+
+    Ok((
+        input,
+        Test {
+            divisor,
+            true_monkey,
+            false_monkey,
+        },
+    ))
+}
+
 // Monkey 0:
 //   Starting items: 79, 98
 //   Operation: new = old * 19
@@ -323,15 +375,32 @@ fn parse_instruction(input: &str) -> IResult<&str, Instruction> {
 //     If true: throw to monkey 2
 //     If false: throw to monkey 3
 fn parse_monkey(input: &str) -> IResult<&str, Monkey> {
+    let (input, _) = fold_many0(newline, || (), |_, _| ())(input)?;
     let (input, _) = tag("Monkey")(input)?;
     let (input, _) = space1(input)?;
-    let (input, index) = character::complete::u32(input)?;
+    let (input, id) = character::complete::u32(input)?;
     let (input, _) = character::complete::char(':')(input)?;
+    let (input, _) = newline(input)?;
 
     let (input, items) = parse_items(input)?;
-    let (input, operation) = parse_instruction(input)?;
+    let (input, anxiety) = parse_instruction(input)?;
+    let (input, test) = parse_test(input)?;
 
-    todo!()
+    Ok((
+        input,
+        Monkey {
+            id: id as usize,
+            items,
+            anxiety,
+            test,
+        },
+    ))
+}
+
+fn parse_monkeys(input: &str) -> Vec<Monkey> {
+    many1(parse_monkey)(input)
+        .expect("failed to parse monkeys")
+        .1
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -341,6 +410,16 @@ fn main() -> Result<(), Box<dyn Error>> {
     let filename = &args.file;
 
     let reader = BufReader::new(File::open(filename)?);
+    let mut to_parse = String::new();
+
+    for line in reader.lines() {
+        let line = line?;
+        if line.is_empty() {
+            continue;
+        }
+
+        writeln!(to_parse, "{line}")?;
+    }
 
     Ok(())
 }
@@ -400,5 +479,21 @@ Monkey 3:
                 arg2: Literal::Num(19),
             }
         )
+    }
+
+    #[test]
+    fn test_parse_test() {
+        parse_test(
+            r#"   Test: divisible by 23
+             If true: throw to monkey 2
+             If false: throw to monkey 3
+"#,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn test_parse_monkeys() {
+        parse_monkeys(input);
     }
 }
