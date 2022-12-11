@@ -321,10 +321,39 @@ struct Cli {
     pub(crate) file: String,
 }
 
+struct Item {
+    starting_monkey_id: usize,
+    initial_worry: usize,
+    worry: usize,
+}
+
+impl Item {
+    fn calculate_new_worry(
+        &mut self,
+        current_monkey_id: usize,
+        anxiety: &Instruction,
+        reduce_anxiety: bool,
+    ) {
+        // if self.starting_monkey_id == current_monkey_id {
+        //     // reset to the original worry value
+        //     self.worry = self.initial_worry;
+        // }
+
+        // raise the anxiety
+        let mut new_worry = anxiety.inspection_score(self.worry);
+        // wow, it's still ok, divide by 3
+        if reduce_anxiety {
+            new_worry /= 3_usize;
+        }
+
+        self.worry = new_worry;
+    }
+}
+
 struct Monkey {
-    _id: usize,
+    id: usize,
     inspected_items_count: usize,
-    items: Vec<usize>,
+    items: Vec<Item>,
     anxiety: Instruction,
     test: Test,
 }
@@ -484,10 +513,20 @@ fn parse_monkey(input: &str) -> IResult<&str, Monkey> {
     let (input, anxiety) = parse_instruction(input)?;
     let (input, test) = parse_test(input)?;
 
+    let id = id as usize;
+    let items = items
+        .into_iter()
+        .map(|worry| Item {
+            starting_monkey_id: id,
+            initial_worry: worry,
+            worry: worry,
+        })
+        .collect();
+
     Ok((
         input,
         Monkey {
-            _id: id as usize,
+            id,
             inspected_items_count: 0,
             items,
             anxiety,
@@ -498,7 +537,6 @@ fn parse_monkey(input: &str) -> IResult<&str, Monkey> {
 
 fn parse_monkeys(input: &str) -> Vec<Monkey> {
     let (_input, monkeys) = many1(parse_monkey)(input).expect("failed to parse monkeys");
-    println!("left over input: {_input}");
 
     monkeys
 }
@@ -507,7 +545,7 @@ fn monkey_business(monkeys: &mut [Monkey], rounds: usize, reduce_anxiety: bool) 
     // rounds
     for _ in 0..rounds {
         // (target index, item worry score)
-        let mut items_thrown_to = Vec::<(usize, usize)>::new();
+        let mut items_thrown_to = Vec::<(usize, Item)>::new();
 
         for m in 0..monkeys.len() {
             // mut area
@@ -517,19 +555,15 @@ fn monkey_business(monkeys: &mut [Monkey], rounds: usize, reduce_anxiety: bool) 
                 let test = &monkey.test;
 
                 // inspect all items
-                for worry in monkey.items.drain(..) {
+                for mut item in monkey.items.drain(..) {
                     monkey.inspected_items_count += 1;
-                    // raise the anxiety
-                    let mut new_worry = anxiety.inspection_score(worry);
-                    // wow, it's still ok, divide by 3
-                    if reduce_anxiety {
-                        new_worry /= 3_usize;
-                    }
 
-                    if &new_worry % test.divisor == 0_usize {
-                        items_thrown_to.push((monkey.test.true_monkey, new_worry));
+                    item.calculate_new_worry(monkey.id, anxiety, reduce_anxiety);
+
+                    if &item.worry % test.divisor == 0_usize {
+                        items_thrown_to.push((monkey.test.true_monkey, item));
                     } else {
-                        items_thrown_to.push((monkey.test.false_monkey, new_worry));
+                        items_thrown_to.push((monkey.test.false_monkey, item));
                     }
                 }
             }
