@@ -323,8 +323,8 @@ struct Cli {
 
 struct Item {
     starting_monkey_id: usize,
-    initial_worry: usize,
-    worry: usize,
+    initial_worry: u128,
+    worry: u128,
 }
 
 impl Item {
@@ -334,16 +334,16 @@ impl Item {
         anxiety: &Instruction,
         reduce_anxiety: bool,
     ) {
-        // if self.starting_monkey_id == current_monkey_id {
-        //     // reset to the original worry value
-        //     self.worry = self.initial_worry;
-        // }
+        if self.starting_monkey_id == current_monkey_id && !reduce_anxiety {
+            // reset to the original worry value
+            self.worry = self.initial_worry;
+        }
 
         // raise the anxiety
         let mut new_worry = anxiety.inspection_score(self.worry);
         // wow, it's still ok, divide by 3
         if reduce_anxiety {
-            new_worry /= 3_usize;
+            new_worry /= 3;
         }
 
         self.worry = new_worry;
@@ -393,13 +393,13 @@ struct Instruction {
 }
 
 impl Instruction {
-    fn inspection_score(&self, worry: usize) -> usize {
+    fn inspection_score(&self, worry: u128) -> u128 {
         let arg1 = match self.arg1 {
-            Literal::Num(val) => val,
+            Literal::Num(val) => val as u128,
             Literal::Old => worry.clone(),
         };
         let arg2 = match self.arg2 {
-            Literal::Num(val) => val,
+            Literal::Num(val) => val as u128,
             Literal::Old => worry,
         };
 
@@ -518,8 +518,8 @@ fn parse_monkey(input: &str) -> IResult<&str, Monkey> {
         .into_iter()
         .map(|worry| Item {
             starting_monkey_id: id,
-            initial_worry: worry,
-            worry: worry,
+            initial_worry: worry as u128,
+            worry: worry as u128,
         })
         .collect();
 
@@ -560,7 +560,7 @@ fn monkey_business(monkeys: &mut [Monkey], rounds: usize, reduce_anxiety: bool) 
 
                     item.calculate_new_worry(monkey.id, anxiety, reduce_anxiety);
 
-                    if &item.worry % test.divisor == 0_usize {
+                    if &item.worry % test.divisor as u128 == 0 {
                         items_thrown_to.push((monkey.test.true_monkey, item));
                     } else {
                         items_thrown_to.push((monkey.test.false_monkey, item));
