@@ -217,17 +217,13 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use clap::Parser;
-use nom::character::complete::anychar;
 use nom::character::complete::{alphanumeric1, newline};
+use nom::character::complete::{anychar, multispace0};
 use nom::multi::{fold_many0, many1};
 use nom::sequence::{pair, preceded};
 use nom::{
-    branch::alt,
     bytes::complete::tag,
-    character::{
-        self,
-        complete::{alpha1, space0, space1},
-    },
+    character::{self, complete::space1},
     combinator::{map, opt},
     sequence::tuple,
     IResult,
@@ -243,7 +239,8 @@ struct Cli {
 }
 
 struct Monkey {
-    id: usize,
+    _id: usize,
+    inspected_items_count: usize,
     items: Vec<usize>,
     anxiety: Instruction,
     test: Test,
@@ -281,6 +278,24 @@ struct Instruction {
     arg1: Literal,
     op: Operation,
     arg2: Literal,
+}
+
+impl Instruction {
+    fn inspection_score(&self, worry: usize) -> usize {
+        let arg1 = match self.arg1 {
+            Literal::Num(val) => val,
+            Literal::Old => worry,
+        };
+        let arg2 = match self.arg2 {
+            Literal::Num(val) => val,
+            Literal::Old => worry,
+        };
+
+        match self.op {
+            Operation::Multiply => arg1 * arg2,
+            Operation::Sum => arg1 + arg2,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -375,7 +390,7 @@ fn parse_test(input: &str) -> IResult<&str, Test> {
 //     If true: throw to monkey 2
 //     If false: throw to monkey 3
 fn parse_monkey(input: &str) -> IResult<&str, Monkey> {
-    let (input, _) = fold_many0(newline, || (), |_, _| ())(input)?;
+    let (input, _) = multispace0(input)?;
     let (input, _) = tag("Monkey")(input)?;
     let (input, _) = space1(input)?;
     let (input, id) = character::complete::u32(input)?;
@@ -389,7 +404,8 @@ fn parse_monkey(input: &str) -> IResult<&str, Monkey> {
     Ok((
         input,
         Monkey {
-            id: id as usize,
+            _id: id as usize,
+            inspected_items_count: 0,
             items,
             anxiety,
             test,
@@ -398,9 +414,57 @@ fn parse_monkey(input: &str) -> IResult<&str, Monkey> {
 }
 
 fn parse_monkeys(input: &str) -> Vec<Monkey> {
-    many1(parse_monkey)(input)
-        .expect("failed to parse monkeys")
-        .1
+    let (_input, monkeys) = many1(parse_monkey)(input).expect("failed to parse monkeys");
+    println!("left over input: {_input}");
+
+    monkeys
+}
+
+fn monkey_business(monkeys: &mut [Monkey]) {
+    // rounds
+    for _ in 0..20 {
+        // (target index, item worry score)
+        let mut items_thrown_to = Vec::<(usize, usize)>::new();
+
+        for m in 0..monkeys.len() {
+            // mut area
+            {
+                let monkey = monkeys.get_mut(m).unwrap();
+                let anxiety = &monkey.anxiety;
+                let test = &monkey.test;
+
+                // inspect all items
+                for worry in monkey.items.drain(..) {
+                    monkey.inspected_items_count += 1;
+                    // raise the anxiety
+                    let new_worry = anxiety.inspection_score(worry);
+                    // wow, it's still ok, divide by 3
+                    let new_worry = new_worry / 3;
+
+                    if new_worry % test.divisor == 0 {
+                        items_thrown_to.push((monkey.test.true_monkey, new_worry));
+                    } else {
+                        items_thrown_to.push((monkey.test.false_monkey, new_worry));
+                    }
+                }
+            }
+
+            // complete toss to the other monkeys
+            for (to_monkey, item) in items_thrown_to.drain(..) {
+                monkeys[to_monkey].items.push(item);
+            }
+        }
+    }
+}
+
+fn calculate_top_monkey_bussiness(monkeys: &[Monkey]) -> usize {
+    let mut scores = monkeys
+        .iter()
+        .map(|monkey| monkey.inspected_items_count)
+        .collect::<Vec<_>>();
+
+    scores.sort_unstable();
+    scores.iter().rev().take(2).product()
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -410,7 +474,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let filename = &args.file;
 
     let reader = BufReader::new(File::open(filename)?);
-    let mut to_parse = String::new();
+    let mut input = String::new();
 
     for line in reader.lines() {
         let line = line?;
@@ -418,8 +482,15 @@ fn main() -> Result<(), Box<dyn Error>> {
             continue;
         }
 
-        writeln!(to_parse, "{line}")?;
+        writeln!(input, "{line}")?;
     }
+
+    // got all the monkeys
+    let mut monkeys = parse_monkeys(&input);
+    monkey_business(&mut monkeys);
+
+    let total_mb = calculate_top_monkey_bussiness(&monkeys);
+    println!("part 1, monkey business product: {total_mb}");
 
     Ok(())
 }
@@ -428,7 +499,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 mod tests {
     use super::*;
 
-    const input: &str = r#"
+    const INPUT: &str = r#"
 Monkey 0:
   Starting items: 79, 98
   Operation: new = old * 19
@@ -493,7 +564,16 @@ Monkey 3:
     }
 
     #[test]
-    fn test_parse_monkeys() {
-        parse_monkeys(input);
+    fn test_part1_input() {
+        let mut monkeys = parse_monkeys(INPUT);
+
+        monkey_business(&mut monkeys);
+
+        assert_eq!(monkeys[0].inspected_items_count, 101);
+        assert_eq!(monkeys[1].inspected_items_count, 95);
+        assert_eq!(monkeys[2].inspected_items_count, 7);
+        assert_eq!(monkeys[3].inspected_items_count, 105);
+
+        assert_eq!(calculate_top_monkey_bussiness(&monkeys), 10605);
     }
 }
