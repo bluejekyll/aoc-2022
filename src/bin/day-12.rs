@@ -28,12 +28,14 @@
 //! What is the fewest steps required to move from your current position to the location that should get the best signal?
 
 use std::cell::RefCell;
+use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::error::Error;
 use std::fmt::Write;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::rc::Rc;
+use std::sync::Arc;
 
 use clap::Parser;
 use nom::character::complete::{alphanumeric1, newline};
@@ -58,10 +60,16 @@ struct Cli {
     pub(crate) file: String,
 }
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct Point {
     x: usize,
     y: usize,
+}
+
+impl std::fmt::Display for Point {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({},{})", self.x, self.y)
+    }
 }
 
 impl Point {
@@ -120,14 +128,33 @@ impl Grid {
 
     fn find_shortest_path(&self) -> Vec<Point> {
         let to_search = Vec::new();
-        self.search_from(self.start, to_search)
+        let bad_path: Rc<RefCell<HashSet<Point>>> = Rc::new(RefCell::new(HashSet::new()));
+        let shortest_path: Rc<RefCell<usize>> = Rc::new(RefCell::new(usize::MAX));
+
+        self.search_from(self.start, to_search, bad_path, shortest_path)
             .expect("no paths found")
     }
 
-    fn search_from(&self, current: Point, mut path: Vec<Point>) -> Option<Vec<Point>> {
+    fn search_from(
+        &self,
+        current: Point,
+        mut path: Vec<Point>,
+        visited: Rc<RefCell<HashSet<Point>>>,
+        shortest_path: Rc<RefCell<usize>>,
+    ) -> Option<Vec<Point>> {
         path.push(current);
         if self.end == current {
+            path.iter().for_each(|point| print!("{point}"));
+            println!(" FOUND {}", path.len());
             return Some(path);
+        }
+
+        // are we already too long?
+        let shortest = *shortest_path.borrow();
+        if path.len() > shortest {
+            path.iter().for_each(|point| print!("{point}"));
+            println!(" TOO LONG {} > {shortest} ", path.len());
+            return None;
         }
 
         let next = &[
@@ -137,14 +164,62 @@ impl Grid {
             current.right(),
         ];
 
+        let mut next: Vec<Point> = next.into_iter().filter_map(|next| next.clone()).collect();
+
+        // we'll order our search to go towards the end
+        next.sort_unstable_by(|n1, n2| {
+            if visited.borrow().contains(&n1) && !visited.borrow().contains(&n2) {
+                return Ordering::Greater;
+            } else if !visited.borrow().contains(&n1) && visited.borrow().contains(&n2) {
+                return Ordering::Less;
+            }
+
+            if current.x < self.end.x {
+                if n1.x > current.x {
+                    Ordering::Less
+                } else if n2.x > current.x {
+                    Ordering::Greater
+                } else {
+                    n1.x.cmp(&n2.x)
+                }
+            } else if current.x > self.end.x {
+                if n1.x < current.x {
+                    Ordering::Less
+                } else if n2.x < current.x {
+                    Ordering::Greater
+                } else {
+                    n1.x.cmp(&n2.x)
+                }
+            } else if current.y < self.end.y {
+                if n1.y > current.y {
+                    Ordering::Less
+                } else if n2.y > current.y {
+                    Ordering::Greater
+                } else {
+                    n1.y.cmp(&n2.y)
+                }
+            } else if current.y > self.end.y {
+                if n1.y < current.y {
+                    Ordering::Less
+                } else if n2.y < current.y {
+                    Ordering::Greater
+                } else {
+                    n1.y.cmp(&n2.y)
+                }
+            } else {
+                Ordering::Equal
+            }
+        });
+
+        visited.borrow_mut().insert(current);
+
         let mut found_path: Option<Vec<Point>> = None;
-        for next in next.iter().filter_map(|n| n.clone()) {
+        for next in next.into_iter() {
             if let Some(ch) = self.get(next) {
                 // height difference of 1 or less
                 let current_ch = self.get(current).expect("current point doesn't exist");
                 if ch.abs_diff(current_ch) > 1 {
                     // too high, continue
-
                     continue;
                 }
             } else {
@@ -157,7 +232,12 @@ impl Grid {
                 continue; // skip spaces already in this path
             }
 
-            if let Some(next_path) = self.search_from(next, path.clone()) {
+            if let Some(next_path) = self.search_from(
+                next,
+                path.clone(),
+                Rc::clone(&visited),
+                Rc::clone(&shortest_path),
+            ) {
                 // if this path doesn't have the end, continue searching
                 if !next_path
                     .last()
@@ -178,6 +258,15 @@ impl Grid {
             }
         }
 
+        if let Some(found_path) = &found_path {
+            let shortest = *shortest_path.borrow();
+            if found_path.len() < shortest {
+                *shortest_path.borrow_mut() = found_path.len()
+            }
+        } else {
+            // path.iter().for_each(|point| print!("{point}"));
+            // println!(" REJECTED");
+        }
         found_path
     }
 }
