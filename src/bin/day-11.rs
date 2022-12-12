@@ -300,7 +300,6 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use clap::Parser;
-use ibig::UBig;
 use nom::character::complete::{alphanumeric1, newline};
 use nom::character::complete::{anychar, multispace0};
 use nom::multi::{fold_many0, many1};
@@ -312,7 +311,7 @@ use nom::{
     sequence::tuple,
     IResult,
 };
-use rayon::prelude::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 
 /// Cli
 #[derive(Debug, Parser)]
@@ -324,46 +323,16 @@ struct Cli {
 }
 
 struct Item {
-    starting_monkey_id: usize,
-    initial_worry: u128,
-    worry: UBig,
+    worry: usize,
 }
 
 impl Item {
-    fn calculate_new_worry(
-        &mut self,
-        current_monkey_id: usize,
-        anxiety: &Instruction,
-        reduce_anxiety: bool,
-        prime: usize,
-        primes: &[usize],
-    ) {
-        // if self.starting_monkey_id == current_monkey_id && !reduce_anxiety {
-        //     // reset to the original worry value
-        //     self.worry = self.initial_worry;
-        // }
-
+    fn calculate_new_worry(&mut self, anxiety: &Instruction, reduce_anxiety: bool) {
         // raise the anxiety
         let mut new_worry = anxiety.inspection_score(&self.worry);
         // wow, it's still ok, divide by 3
         if reduce_anxiety {
             new_worry /= 3;
-        } else {
-            // // if it's divisible by a prime squared, then we can safely remove one devisor, and still "pass" the test
-            // let found_devisors = primes
-            //     .par_iter()
-            //     .filter_map(|prime| {
-            //         if &new_worry % prime.pow(2) == *prime {
-            //             Some(*prime)
-            //         } else {
-            //             None
-            //         }
-            //     })
-            //     .collect::<Vec<usize>>();
-
-            // for devisor in &found_devisors {
-            //     new_worry /= dbg!(*devisor);
-            // }
         }
 
         self.worry = new_worry;
@@ -413,13 +382,13 @@ struct Instruction {
 }
 
 impl Instruction {
-    fn inspection_score(&self, worry: &UBig) -> UBig {
+    fn inspection_score(&self, worry: &usize) -> usize {
         let arg1 = match self.arg1 {
-            Literal::Num(val) => UBig::from(val),
+            Literal::Num(val) => usize::from(val),
             Literal::Old => worry.clone(),
         };
         let arg2 = match self.arg2 {
-            Literal::Num(val) => UBig::from(val),
+            Literal::Num(val) => usize::from(val),
             Literal::Old => worry.clone(),
         };
 
@@ -537,9 +506,7 @@ fn parse_monkey(input: &str) -> IResult<&str, Monkey> {
     let items = items
         .into_iter()
         .map(|worry| Item {
-            starting_monkey_id: id,
-            initial_worry: worry as u128,
-            worry: UBig::from(worry),
+            worry: usize::from(worry),
         })
         .collect();
 
@@ -567,10 +534,9 @@ fn parse_monkeys(input: &str) -> (Vec<Monkey>, Vec<usize>) {
     (monkeys, primes)
 }
 
-fn monkey_business(monkeys: &mut [Monkey], rounds: usize, reduce_anxiety: bool, primes: &[usize]) {
+fn monkey_business(monkeys: &mut [Monkey], rounds: usize, reduce_anxiety: bool) {
     // rounds
-    for r in 0..rounds {
-        println!("round: {r}");
+    for _ in 0..rounds {
         // (target index, item worry score)
         let mut items_thrown_to = Vec::<(usize, Item)>::new();
 
@@ -588,18 +554,9 @@ fn monkey_business(monkeys: &mut [Monkey], rounds: usize, reduce_anxiety: bool, 
                 let send_items_to: Vec<(usize, Item)> = these_items
                     .into_par_iter()
                     .map(|mut item| {
-                        item.calculate_new_worry(
-                            monkey.id,
-                            anxiety,
-                            reduce_anxiety,
-                            test.divisor,
-                            primes,
-                        );
+                        item.calculate_new_worry(anxiety, reduce_anxiety);
 
-                        if &item.worry % test.divisor.pow(2) == 0 {
-                            item.worry /= test.divisor;
-                            (monkey.test.true_monkey, item)
-                        } else if &item.worry % test.divisor == 0 {
+                        if &item.worry % test.divisor == 0 {
                             (monkey.test.true_monkey, item)
                         } else {
                             (monkey.test.false_monkey, item)
@@ -628,6 +585,97 @@ fn calculate_top_monkey_bussiness(monkeys: &[Monkey]) -> usize {
     scores.iter().rev().take(2).product()
 }
 
+struct MonkeyPrimes(Vec<usize>);
+
+struct WideItem(Vec<usize>);
+
+impl WideItem {
+    fn new(worry: usize, primes: &MonkeyPrimes) -> Self {
+        Self(primes.0.iter().map(|prime| worry % prime).collect())
+    }
+
+    fn calculate_new_worry(&mut self, anxiety: &Instruction, constraints: &MonkeyPrimes) {
+        for (worry, prime) in self.0.iter_mut().zip(constraints.0.iter()) {
+            *worry = anxiety.inspection_score(worry) % prime;
+        }
+    }
+}
+
+struct SmartMonkey {
+    id: usize,
+    inspected_items_count: usize,
+    items: Vec<WideItem>,
+    anxiety: Instruction,
+    test: Test,
+}
+
+fn make_smart_monkeys(monkeys: Vec<Monkey>, primes: &MonkeyPrimes) -> Vec<SmartMonkey> {
+    monkeys
+        .into_iter()
+        .map(|monkey| SmartMonkey {
+            id: monkey.id,
+            inspected_items_count: monkey.inspected_items_count,
+            items: monkey
+                .items
+                .into_iter()
+                .map(|item| WideItem::new(item.worry, primes))
+                .collect(),
+            test: monkey.test,
+            anxiety: monkey.anxiety,
+        })
+        .collect()
+}
+
+fn smart_monkey_business(monkeys: &mut [SmartMonkey], rounds: usize, primes: &MonkeyPrimes) {
+    // rounds
+    for _r in 0..rounds {
+        // (target index, item worry score)
+        let mut items_thrown_to = Vec::<(usize, WideItem)>::new();
+
+        for m in 0..monkeys.len() {
+            // mut area
+            {
+                let monkey = monkeys.get_mut(m).unwrap();
+                let anxiety = &monkey.anxiety;
+
+                // inspect all items
+                let these_items = monkey.items.drain(..).collect::<Vec<_>>();
+                monkey.inspected_items_count += these_items.len();
+
+                let send_items_to: Vec<(usize, WideItem)> = these_items
+                    .into_iter()
+                    .map(|mut item| {
+                        item.calculate_new_worry(anxiety, primes);
+
+                        if item.0[monkey.id] == 0 {
+                            (monkey.test.true_monkey, item)
+                        } else {
+                            (monkey.test.false_monkey, item)
+                        }
+                    })
+                    .collect();
+
+                items_thrown_to.extend(send_items_to);
+            }
+
+            // complete toss to the other monkeys
+            for (to_monkey, item) in items_thrown_to.drain(..) {
+                monkeys[to_monkey].items.push(item);
+            }
+        }
+    }
+}
+
+fn calculate_smart_monkey_bussiness(monkeys: &[SmartMonkey]) -> usize {
+    let mut scores = monkeys
+        .iter()
+        .map(|monkey| monkey.inspected_items_count)
+        .collect::<Vec<_>>();
+
+    scores.sort_unstable();
+    scores.iter().rev().take(2).product()
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     println!("{}", env!("CARGO_PKG_NAME"));
     let args = Cli::parse();
@@ -647,16 +695,18 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     // got all the monkeys
-    let (mut monkeys, primes) = parse_monkeys(&input);
-    monkey_business(&mut monkeys, 20, true, &primes);
+    let (mut monkeys, _primes) = parse_monkeys(&input);
+    monkey_business(&mut monkeys, 20, true);
 
     let total_mb = calculate_top_monkey_bussiness(&monkeys);
     println!("part 1, monkey business product: {total_mb}");
 
-    let (mut monkeys, primes) = parse_monkeys(&input);
-    monkey_business(&mut monkeys, 10000, false, &primes);
+    let (monkeys, primes) = parse_monkeys(&input);
+    let primes = MonkeyPrimes(primes);
+    let mut monkeys = make_smart_monkeys(monkeys, &primes);
+    smart_monkey_business(&mut monkeys, 10_000, &primes);
 
-    let total_mb = calculate_top_monkey_bussiness(&monkeys);
+    let total_mb = calculate_smart_monkey_bussiness(&monkeys);
     println!("part 2, monkey business product: {total_mb}");
 
     Ok(())
@@ -732,9 +782,9 @@ Monkey 3:
 
     #[test]
     fn test_part1_input() {
-        let (mut monkeys, primes) = parse_monkeys(INPUT);
+        let (mut monkeys, _primes) = parse_monkeys(INPUT);
 
-        monkey_business(&mut monkeys, 20, true, &primes);
+        monkey_business(&mut monkeys, 20, true);
 
         assert_eq!(monkeys[0].inspected_items_count, 101);
         assert_eq!(monkeys[1].inspected_items_count, 95);
@@ -746,15 +796,17 @@ Monkey 3:
 
     #[test]
     fn test_part2_input() {
-        let (mut monkeys, primes) = parse_monkeys(INPUT);
+        let (monkeys, primes) = parse_monkeys(INPUT);
+        let primes = MonkeyPrimes(primes);
+        let mut monkeys = make_smart_monkeys(monkeys, &primes);
 
-        monkey_business(&mut monkeys, 10000, false, &primes);
+        smart_monkey_business(&mut monkeys, 10_000, &primes);
 
         assert_eq!(monkeys[0].inspected_items_count, 52166);
         assert_eq!(monkeys[1].inspected_items_count, 47830);
         assert_eq!(monkeys[2].inspected_items_count, 1938);
         assert_eq!(monkeys[3].inspected_items_count, 52013);
 
-        assert_eq!(calculate_top_monkey_bussiness(&monkeys), 2713310158);
+        assert_eq!(calculate_smart_monkey_bussiness(&monkeys), 2713310158);
     }
 }
