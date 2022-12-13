@@ -300,15 +300,15 @@ use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use clap::Parser;
-use nom::character::complete::{alphanumeric1, newline};
-use nom::character::complete::{anychar, multispace0};
-use nom::multi::{fold_many0, many1};
-use nom::sequence::{pair, preceded};
 use nom::{
     bytes::complete::tag,
-    character::{self, complete::space1},
+    character::{
+        self,
+        complete::{alphanumeric1, anychar, multispace0, newline, space1},
+    },
     combinator::{map, opt},
-    sequence::tuple,
+    multi::{fold_many0, many1},
+    sequence::{pair, preceded, tuple},
     IResult,
 };
 use rayon::prelude::{IntoParallelIterator, ParallelIterator};
