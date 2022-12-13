@@ -27,16 +27,35 @@
 //!
 //! What is the fewest steps required to move from your current position to the location that should get the best signal?
 
-use std::cell::RefCell;
-use std::cmp::Ordering;
-use std::collections::HashSet;
-use std::error::Error;
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::rc::Rc;
+use std::{
+    cell::RefCell,
+    cmp::Ordering,
+    collections::HashSet,
+    error::Error,
+    fs::File,
+    io::{BufRead, BufReader},
+    rc::Rc,
+    sync::mpsc::{self, channel, Receiver, Sender},
+    time::Duration,
+};
 
 use clap::Parser;
+use crossterm::{
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
 use pathfinding::directed::{astar::astar, bfs::bfs, dijkstra::dijkstra};
+use tui::{
+    backend::CrosstermBackend,
+    layout::{Constraint, Direction, Layout},
+    style::Color,
+    widgets::{
+        canvas::{Canvas, Line, Map, MapResolution, Points, Rectangle},
+        Block, Borders, Widget,
+    },
+    Terminal,
+};
 
 /// Cli
 #[derive(Debug, Parser)]
@@ -89,6 +108,7 @@ impl Point {
     }
 }
 
+#[derive(Clone)]
 struct Grid {
     start: Point,
     end: Point,
@@ -138,12 +158,15 @@ impl Grid {
     }
 
     #[allow(unused)]
-    fn find_shortest_path_a_star(&self) -> Option<Vec<Point>> {
+    fn find_shortest_path_a_star(&self, sender: Sender<Point>) -> Option<Vec<Point>> {
         astar(
             &self.start,
             |point| self.successors(point).into_iter().map(|p| (p, 1)),
             |point| self.distance_from_end(point),
-            |point| self.is_end(point),
+            |point| {
+                sender.send(*point);
+                self.is_end(point)
+            },
         )
         .map(|(path, _)| path)
     }
@@ -168,12 +191,12 @@ impl Grid {
     }
 
     #[allow(unused)]
-    fn find_shortest_path(&self) -> Vec<Point> {
+    fn find_shortest_path(&self, sender: Sender<Point>) -> Vec<Point> {
         let to_search = Vec::new();
         let bad_path: Rc<RefCell<HashSet<Point>>> = Rc::new(RefCell::new(HashSet::new()));
         let shortest_path: Rc<RefCell<usize>> = Rc::new(RefCell::new(usize::MAX));
 
-        self.search_from(self.start, to_search, bad_path, shortest_path)
+        self.search_from(self.start, to_search, bad_path, shortest_path, sender)
             .expect("no paths found")
     }
 
@@ -184,7 +207,9 @@ impl Grid {
         mut path: Vec<Point>,
         visited: Rc<RefCell<HashSet<Point>>>,
         shortest_path: Rc<RefCell<usize>>,
+        sender: Sender<Point>,
     ) -> Option<Vec<Point>> {
+        sender.send(current).unwrap();
         path.push(current);
         if self.end == current {
             return Some(path);
@@ -276,6 +301,7 @@ impl Grid {
                 path.clone(),
                 Rc::clone(&visited),
                 Rc::clone(&shortest_path),
+                sender.clone(),
             ) {
                 // if this path doesn't have the end, continue searching
                 if !next_path
@@ -340,7 +366,13 @@ fn parse_grid(reader: impl BufRead) -> Result<Grid, Box<dyn Error>> {
         }
     }
 
-    println!("S{} E{}", start.unwrap(), end.unwrap());
+    println!(
+        "S{} E{} {}*{}",
+        start.unwrap(),
+        end.unwrap(),
+        rows[0].len(),
+        rows.len()
+    );
 
     Ok(Grid {
         start: start.expect("start not found"),
@@ -361,11 +393,79 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let reader = BufReader::new(File::open(filename)?);
     let grid = parse_grid(reader)?;
-    let path = grid.find_shortest_path_a_star().expect("no path found");
+    //let path = grid.find_shortest_path_a_star().expect("no path found");
     //let path = grid.find_shortest_path_dijkstra().expect("no path found");
     //let path = grid.find_shortest_path_bfs().expect("no path found");
 
-    println!("part1, shortest path: {}", path_len(path));
+    // follow the search
+    let (sender, receiver): (Sender<Point>, Receiver<Point>) = mpsc::channel();
+
+    let grid2 = grid.clone();
+    std::thread::spawn(move || drawing_thread(grid2, receiver).unwrap());
+
+    //let path = grid.find_shortest_path(sender);
+    let path = grid.find_shortest_path_a_star(sender);
+
+    std::thread::sleep(Duration::from_secs(30));
+
+    println!(
+        "part1, shortest path: {}",
+        path_len(path.expect("no path found"))
+    );
+
+    Ok(())
+}
+
+fn drawing_thread(mut grid: Grid, receiver: Receiver<Point>) -> Result<(), Box<dyn Error>> {
+    let stdout = std::io::stdout();
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    while let Ok(found) = receiver.recv() {
+        grid.data[found.y][found.x] = u8::MAX;
+
+        terminal.draw(|f| {
+            let size = f.size();
+            let block = Canvas::default()
+                .block(Block::default().title("Canvas").borders(Borders::ALL))
+                .x_bounds([0.0, grid.data[0].len() as f64])
+                .y_bounds([0.0, grid.data.len() as f64])
+                .paint(|ctx| {
+                    for (point, ch) in grid.data.iter().enumerate().flat_map(|(y, row)| {
+                        row.iter()
+                            .enumerate()
+                            .map(move |(x, ch)| (Point { x, y }, *ch))
+                    }) {
+                        let color = if found == point {
+                            Color::White
+                        } else if grid.end == point {
+                            Color::Red
+                        } else if grid.start == point {
+                            Color::Green
+                        } else {
+                            Color::Indexed(ch)
+                        };
+                        ctx.draw(&Rectangle {
+                            x: point.x as f64,
+                            y: point.y as f64,
+                            width: 1.0,
+                            height: 1.0,
+                            color,
+                        });
+                    }
+                });
+            f.render_widget(block, size);
+        })?;
+    }
+
+    // // restore terminal
+    // disable_raw_mode()?;
+    // execute!(
+    //     terminal.backend_mut(),
+    //     LeaveAlternateScreen,
+    //     DisableMouseCapture
+    // )?;
+    // terminal.show_cursor()?;
 
     Ok(())
 }
@@ -386,14 +486,19 @@ abdefghi
     fn test_part1() {
         let grid = parse_grid(BufReader::new(INPUT.as_bytes())).unwrap();
 
-        assert_eq!(path_len(grid.find_shortest_path()), 31);
+        let (sender, _receiver): (Sender<Point>, Receiver<Point>) = mpsc::channel();
+        assert_eq!(path_len(grid.find_shortest_path(sender)), 31);
     }
 
     #[test]
     fn test_part1_a_star() {
         let grid = parse_grid(BufReader::new(INPUT.as_bytes())).unwrap();
+        let (sender, _receiver): (Sender<Point>, Receiver<Point>) = mpsc::channel();
 
-        assert_eq!(path_len(grid.find_shortest_path_a_star().unwrap()), 31);
+        assert_eq!(
+            path_len(grid.find_shortest_path_a_star(sender).unwrap()),
+            31
+        );
     }
 
     #[test]
