@@ -16,3 +16,6 @@ clap = { version = "4.0.29", features = [
 nom = { version = "7.1.1", features = ["alloc"] }
 ibig = "0.3.6"
 rayon = "1.6.1"
+tui = "0.19.0"
+crossterm = "0.25"
+pathfinding = "4.0.1"
