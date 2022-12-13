@@ -151,7 +151,7 @@ enum Packet {
 impl Packet {
     fn is_lesser(&self, other: &Self) -> bool {
         match (self, other) {
-            (Packet::Literal(this), Packet::Literal(that)) => this < that,
+            (Packet::Literal(this), Packet::Literal(that)) => this <= that,
             (this @ Packet::Literal(_), other @ Packet::List(_list)) => {
                 Packet::List(vec![this.clone()]).is_lesser(other)
             }

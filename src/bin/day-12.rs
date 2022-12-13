@@ -26,6 +26,31 @@
 //! This path reaches the goal in 31 steps, the fewest possible.
 //!
 //! What is the fewest steps required to move from your current position to the location that should get the best signal?
+//!
+//! --- Part Two ---
+//! As you walk up the hill, you suspect that the Elves will want to turn this into a hiking trail. The beginning isn't very scenic, though; perhaps you can find a better starting point.
+//!
+//! To maximize exercise while hiking, the trail should start as low as possible: elevation a. The goal is still the square marked E. However, the trail should still be direct, taking the fewest steps to reach its goal. So, you'll need to find the shortest path from any square at elevation a to the square marked E.
+//!
+//! Again consider the example from above:
+//!
+//! Sabqponm
+//! abcryxxl
+//! accszExk
+//! acctuvwj
+//! abdefghi
+//! Now, there are six choices for starting position (five marked a, plus the square marked S that counts as being at elevation a). If you start at the bottom-left square, you can reach the goal most quickly:
+//!
+//! ...v<<<<
+//! ...vv<<^
+//! ...v>E^^
+//! .>v>>>^^
+//! >^>>>>>^
+//! This path reaches the goal in only 29 steps, the fewest possible.
+//!
+//! What is the fewest steps required to move starting from any square with elevation a to the location that should get the best signal?
+
+#![allow(unused)]
 
 use std::{
     cell::RefCell,
@@ -36,6 +61,7 @@ use std::{
     io::{BufRead, BufReader},
     rc::Rc,
     sync::mpsc::{self, channel, Receiver, Sender},
+    thread::current,
     time::Duration,
 };
 
@@ -133,6 +159,20 @@ impl Grid {
             .map(get_height)
     }
 
+    fn all_of(&self, find_ch: u8) -> impl IntoIterator<Item = Point> + '_ {
+        self.data
+            .iter()
+            .enumerate()
+            .flat_map(|(y, row)| {
+                row.iter()
+                    .enumerate()
+                    .map(move |(x, ch)| (Point { x, y }, *ch))
+            })
+            .map(|(point, ch)| (point, get_height(ch)))
+            .filter(move |(_, ch)| *ch == find_ch)
+            .map(|(point, _)| point)
+    }
+
     fn successors(&self, point: &Point) -> Vec<Point> {
         [point.up(), point.down(), point.left(), point.right()]
             .into_iter()
@@ -141,7 +181,7 @@ impl Grid {
             .filter(|next| {
                 if let Some(next_ch) = self.get(next) {
                     let current_height = self.get(point).expect("current point should exist");
-                    current_height.abs_diff(next_ch) <= 1
+                    current_height >= next_ch || current_height.abs_diff(next_ch) == 1
                 } else {
                     false
                 }
@@ -158,13 +198,16 @@ impl Grid {
     }
 
     #[allow(unused)]
-    fn find_shortest_path_a_star(&self, sender: Sender<Point>) -> Option<Vec<Point>> {
+    fn find_shortest_path_a_star(
+        &self,
+        start: Point, /* , sender: Sender<Point>*/
+    ) -> Option<Vec<Point>> {
         astar(
-            &self.start,
+            &start,
             |point| self.successors(point).into_iter().map(|p| (p, 1)),
             |point| self.distance_from_end(point),
             |point| {
-                sender.send(*point);
+                /*sender.send(*point);*/
                 self.is_end(point)
             },
         )
@@ -398,20 +441,34 @@ fn main() -> Result<(), Box<dyn Error>> {
     //let path = grid.find_shortest_path_bfs().expect("no path found");
 
     // follow the search
-    let (sender, receiver): (Sender<Point>, Receiver<Point>) = mpsc::channel();
+
+    // for drawing
+    //let (sender, receiver): (Sender<Point>, Receiver<Point>) = mpsc::channel();
 
     let grid2 = grid.clone();
-    std::thread::spawn(move || drawing_thread(grid2, receiver).unwrap());
+    // std::thread::spawn(move || drawing_thread(grid2, receiver).unwrap());
 
     //let path = grid.find_shortest_path(sender);
-    let path = grid.find_shortest_path_a_star(sender);
+    let path = grid.find_shortest_path_a_star(grid.start /* , sender*/);
 
-    std::thread::sleep(Duration::from_secs(30));
+    //std::thread::sleep(Duration::from_secs(30));
 
     println!(
         "part1, shortest path: {}",
         path_len(path.expect("no path found"))
     );
+
+    // find all a points
+    let best_scenic_route = grid
+        .all_of(b'a')
+        .into_iter()
+        .map(|point| grid.find_shortest_path_a_star(point))
+        .filter_map(|path| path)
+        .map(path_len)
+        .min()
+        .expect("no scenic routes found");
+
+    println!("part2, best scenic path: {best_scenic_route}");
 
     Ok(())
 }
@@ -458,14 +515,14 @@ fn drawing_thread(mut grid: Grid, receiver: Receiver<Point>) -> Result<(), Box<d
         })?;
     }
 
-    // // restore terminal
-    // disable_raw_mode()?;
-    // execute!(
-    //     terminal.backend_mut(),
-    //     LeaveAlternateScreen,
-    //     DisableMouseCapture
-    // )?;
-    // terminal.show_cursor()?;
+    // restore terminal
+    disable_raw_mode()?;
+    execute!(
+        terminal.backend_mut(),
+        LeaveAlternateScreen,
+        DisableMouseCapture
+    )?;
+    terminal.show_cursor()?;
 
     Ok(())
 }
@@ -493,10 +550,13 @@ abdefghi
     #[test]
     fn test_part1_a_star() {
         let grid = parse_grid(BufReader::new(INPUT.as_bytes())).unwrap();
-        let (sender, _receiver): (Sender<Point>, Receiver<Point>) = mpsc::channel();
+        //let (sender, _receiver): (Sender<Point>, Receiver<Point>) = mpsc::channel();
 
         assert_eq!(
-            path_len(grid.find_shortest_path_a_star(sender).unwrap()),
+            path_len(
+                grid.find_shortest_path_a_star(grid.start /* , sender*/)
+                    .unwrap()
+            ),
             31
         );
     }
