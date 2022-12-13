@@ -31,28 +31,12 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 use std::error::Error;
-use std::fmt::Write;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::rc::Rc;
-use std::sync::Arc;
 
 use clap::Parser;
-use nom::character::complete::{alphanumeric1, newline};
-use nom::character::complete::{anychar, multispace0};
-use nom::multi::{fold_many0, many1};
-use nom::sequence::{pair, preceded};
-use nom::{
-    bytes::complete::tag,
-    character::{self, complete::space1},
-    combinator::{map, opt},
-    sequence::tuple,
-    IResult,
-};
-use pathfinding::directed::astar::astar;
-use pathfinding::directed::bfs::bfs;
-use pathfinding::directed::dijkstra::dijkstra;
-use rayon::prelude::{IntoParallelIterator, ParallelIterator};
+use pathfinding::directed::{astar::astar, bfs::bfs, dijkstra::dijkstra};
 
 /// Cli
 #[derive(Debug, Parser)]
@@ -129,6 +113,61 @@ impl Grid {
             .map(get_height)
     }
 
+    fn successors(&self, point: &Point) -> Vec<Point> {
+        [point.up(), point.down(), point.left(), point.right()]
+            .into_iter()
+            .filter_map(|next| next)
+            // remove any nodes that aren't in the grid or are too high
+            .filter(|next| {
+                if let Some(next_ch) = self.get(next) {
+                    let current_height = self.get(point).expect("current point should exist");
+                    current_height.abs_diff(next_ch) <= 1
+                } else {
+                    false
+                }
+            })
+            .collect::<Vec<_>>()
+    }
+
+    fn distance_from_end(&self, point: &Point) -> usize {
+        self.end.x.abs_diff(point.x) + self.end.y.abs_diff(point.y)
+    }
+
+    fn is_end(&self, point: &Point) -> bool {
+        self.end == *point
+    }
+
+    #[allow(unused)]
+    fn find_shortest_path_a_star(&self) -> Option<Vec<Point>> {
+        astar(
+            &self.start,
+            |point| self.successors(point).into_iter().map(|p| (p, 1)),
+            |point| self.distance_from_end(point),
+            |point| self.is_end(point),
+        )
+        .map(|(path, _)| path)
+    }
+
+    #[allow(unused)]
+    fn find_shortest_path_dijkstra(&self) -> Option<Vec<Point>> {
+        dijkstra(
+            &self.start,
+            |point| self.successors(point).into_iter().map(|p| (p, 1)),
+            |point| self.is_end(point),
+        )
+        .map(|(path, _)| path)
+    }
+
+    #[allow(unused)]
+    fn find_shortest_path_bfs(&self) -> Option<Vec<Point>> {
+        bfs(
+            &self.start,
+            |point| self.successors(point),
+            |point| self.is_end(point),
+        )
+    }
+
+    #[allow(unused)]
     fn find_shortest_path(&self) -> Vec<Point> {
         let to_search = Vec::new();
         let bad_path: Rc<RefCell<HashSet<Point>>> = Rc::new(RefCell::new(HashSet::new()));
@@ -138,82 +177,7 @@ impl Grid {
             .expect("no paths found")
     }
 
-    fn find_shortest_path_a_star(&self) -> Option<Vec<Point>> {
-        let successors = |point: &Point| -> Vec<(Point, usize)> {
-            [point.up(), point.down(), point.left(), point.right()]
-                .into_iter()
-                .filter_map(|next| next)
-                // remove any nodes that aren't in the grid or are too high
-                .filter(|next| {
-                    if let Some(next_ch) = self.get(next) {
-                        let current_height = self.get(point).expect("current point should exist");
-                        current_height.abs_diff(next_ch) <= 1
-                    } else {
-                        false
-                    }
-                })
-                .map(|point| (point, 1usize))
-                .collect::<Vec<_>>()
-        };
-        let heuristic = |point: &Point| self.end.x.abs_diff(point.x) * self.end.y.abs_diff(point.y);
-        let success = |point: &Point| self.end == *point;
-
-        astar(&self.start, successors, heuristic, success).map(|(path, _)| path)
-    }
-
-    fn find_shortest_path_dijkstra(&self) -> Option<Vec<Point>> {
-        let successors = |point: &Point| -> Vec<(Point, usize)> {
-            [point.up(), point.down(), point.left(), point.right()]
-                .into_iter()
-                .filter_map(|next| next)
-                // remove any nodes that aren't in the grid or are too high
-                .filter(|next| {
-                    if let Some(next_ch) = self.get(next) {
-                        let current_height = self.get(point).expect("current point should exist");
-                        current_height.abs_diff(next_ch) <= 1
-                    } else {
-                        false
-                    }
-                })
-                .map(|point| (point, 1usize))
-                .collect::<Vec<_>>()
-        };
-        let success = |point: &Point| {
-            if point.x == 138 || point.y == 20 {
-                println!("{point}");
-            }
-            self.end == *point
-        };
-
-        dijkstra(&self.start, successors, success).map(|(path, _)| path)
-    }
-
-    fn find_shortest_path_bfs(&self) -> Option<Vec<Point>> {
-        let successors = |point: &Point| -> Vec<Point> {
-            [point.up(), point.down(), point.left(), point.right()]
-                .into_iter()
-                .filter_map(|next| next)
-                // remove any nodes that aren't in the grid or are too high
-                .filter(|next| {
-                    if let Some(next_ch) = self.get(next) {
-                        let current_height = self.get(point).expect("current point should exist");
-                        current_height.abs_diff(next_ch) <= 1
-                    } else {
-                        false
-                    }
-                })
-                .collect::<Vec<_>>()
-        };
-        let success = |point: &Point| {
-            if point.x == 138 || point.y == 20 {
-                println!("{point}");
-            }
-            self.end == *point
-        };
-
-        bfs(&self.start, successors, success)
-    }
-
+    #[allow(unused)]
     fn search_from(
         &self,
         current: Point,
@@ -397,9 +361,9 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let reader = BufReader::new(File::open(filename)?);
     let grid = parse_grid(reader)?;
-    //let path = grid.find_shortest_path_a_star().expect("no path found");
+    let path = grid.find_shortest_path_a_star().expect("no path found");
     //let path = grid.find_shortest_path_dijkstra().expect("no path found");
-    let path = grid.find_shortest_path_bfs().expect("no path found");
+    //let path = grid.find_shortest_path_bfs().expect("no path found");
 
     println!("part1, shortest path: {}", path_len(path));
 
