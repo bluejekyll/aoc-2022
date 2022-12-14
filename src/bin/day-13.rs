@@ -110,28 +110,12 @@
 
 use std::cmp::Ordering;
 use std::error::Error;
-use std::fmt::Write;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use clap::Parser;
 use nom::sequence::delimited;
-use nom::{
-    branch::alt,
-    bytes::complete::tag,
-    character::{
-        self,
-        complete::{alphanumeric1, anychar, multispace0, newline, space1},
-    },
-    combinator::{map, opt},
-    multi::{fold_many0, many1},
-    number,
-    sequence::{pair, preceded, tuple},
-    IResult,
-};
-
-const CYCLES: &[usize] = &[20, 60, 100, 140, 180, 220];
-const CRT_ROW_WIDTH: usize = 40;
+use nom::{branch::alt, bytes::complete::tag, character, IResult};
 
 /// Cli
 #[derive(Debug, Parser)]
@@ -149,9 +133,9 @@ enum Packet {
 }
 
 impl Packet {
-    fn is_lesser(&self, other: &Self) -> bool {
+    fn is_lesser(&self, other: &Self) -> Ordering {
         match (self, other) {
-            (Packet::Literal(this), Packet::Literal(that)) => this <= that,
+            (Packet::Literal(this), Packet::Literal(that)) => this.cmp(that),
             (this @ Packet::Literal(_), other @ Packet::List(_list)) => {
                 Packet::List(vec![this.clone()]).is_lesser(other)
             }
@@ -159,17 +143,23 @@ impl Packet {
                 this.is_lesser(&Packet::List(vec![other.clone()]))
             }
             (Packet::List(these), Packet::List(those)) => {
+                let mut order = Ordering::Equal;
                 for (idx, this) in these.iter().enumerate() {
                     if let Some(that) = those.get(idx) {
-                        if !this.is_lesser(that) {
-                            return false;
+                        match this.is_lesser(that) {
+                            Ordering::Greater => return Ordering::Greater,
+                            ordering => order = ordering,
                         }
                     } else {
-                        return false;
+                        match order {
+                            Ordering::Equal => return Ordering::Greater,
+                            Ordering::Less => return Ordering::Less,
+                            _ => panic!("Greater should have returned earlier"),
+                        }
                     }
                 }
 
-                return true;
+                order
             }
         }
     }
@@ -210,8 +200,8 @@ fn process_packets(reader: impl BufRead) -> Result<usize, Box<dyn Error>> {
         let packet1 = parse_packet(&line);
         let packet2 = parse_packet(&lines.next().expect("eof")?);
 
-        if !packet1.is_lesser(&packet2) {
-            running_total += index;
+        if !packet1.is_lesser(&packet2).is_gt() {
+            running_total += dbg!(index);
         }
     }
 
@@ -235,4 +225,129 @@ fn main() -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const INPUT: &str = r#"
+[1,1,3,1,1]
+[1,1,5,1,1]
+
+[[1],[2,3,4]]
+[[1],4]
+
+[9]
+[[8,7,6]]
+
+[[4,4],4,4]
+[[4,4],4,4,4]
+
+[7,7,7,7]
+[7,7,7]
+
+[]
+[3]
+
+[[[]]]
+[[]]
+
+[1,[2,[3,[4,[5,6,7]]]],8,9]
+[1,[2,[3,[4,[5,6,0]]]],8,9]
+"#;
+
+    #[test]
+    fn test_part1() {
+        let sum_of_indexes = process_packets(BufReader::new(INPUT.as_bytes())).unwrap();
+        assert_eq!(sum_of_indexes, 13);
+    }
+
+    #[test]
+    fn test_part1_each_packet() {
+        let process_packets = |s: &str| process_packets(BufReader::new(s.as_bytes()));
+
+        assert_eq!(
+            process_packets(
+                r#"
+[1,1,3,1,1]
+[1,1,5,1,1]
+"#
+            )
+            .unwrap(),
+            1
+        );
+
+        assert_eq!(
+            process_packets(
+                r#"
+[[1],[2,3,4]]
+[[1],4]
+"#
+            )
+            .unwrap(),
+            1
+        );
+
+        assert_eq!(
+            process_packets(
+                r#"
+[9]
+[[8,7,6]]
+"#
+            )
+            .unwrap(),
+            0
+        );
+
+        assert_eq!(
+            process_packets(
+                r#"
+[[4,4],4,4]
+[[4,4],4,4,4]
+"#
+            )
+            .unwrap(),
+            1
+        );
+
+        assert_eq!(
+            process_packets(
+                r#"
+[7,7,7,7]
+[7,7,7]
+"#
+            )
+            .unwrap(),
+            0
+        );
+
+        assert_eq!(
+            process_packets(
+                r#"
+[]
+[3]
+"#
+            )
+            .unwrap(),
+            1
+        );
+
+        assert_eq!(
+            process_packets(
+                r#"
+[[[]]]
+[[]]
+"#
+            )
+            .unwrap(),
+            0
+        );
+
+        assert_eq!(
+            process_packets(
+                r#"
+[1,[2,[3,[4,[5,6,7]]]],8,9]
+[1,[2,[3,[4,[5,6,0]]]],8,9]
+"#
+            )
+            .unwrap(),
+            0
+        );
+    }
 }
