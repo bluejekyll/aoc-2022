@@ -132,6 +132,17 @@ enum Packet {
     List(Vec<Packet>),
 }
 
+impl std::fmt::Debug for Packet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Packet::Literal(i) => write!(f, "{i}")?,
+            Packet::List(list) => write!(f, "{list:?}")?,
+        }
+
+        Ok(())
+    }
+}
+
 impl Packet {
     fn is_lesser(&self, other: &Self) -> Ordering {
         match (self, other) {
@@ -143,22 +154,26 @@ impl Packet {
                 this.is_lesser(&Packet::List(vec![other.clone()]))
             }
             (Packet::List(these), Packet::List(those)) => {
+                println!("=SS= {these:?} =OO= {those:?}");
+
                 let mut order = Ordering::Equal;
-                for (idx, this) in these.iter().enumerate() {
-                    if let Some(that) = those.get(idx) {
-                        match this.is_lesser(that) {
-                            Ordering::Greater => return Ordering::Greater,
-                            ordering => order = ordering,
-                        }
-                    } else {
-                        match order {
-                            Ordering::Equal => return Ordering::Greater,
-                            Ordering::Less => return Ordering::Less,
-                            _ => panic!("Greater should have returned earlier"),
+                for (this, that) in these.iter().zip(those.iter()) {
+                    match this.is_lesser(that) {
+                        Ordering::Greater => return Ordering::Greater,
+                        ordering => {
+                            // only set if it's eq, if it's lesser, we want it to remain so
+                            if order.is_eq() {
+                                order = ordering
+                            }
                         }
                     }
                 }
 
+                if !order.is_gt() && these.len() < those.len() {
+                    return Ordering::Less;
+                } else if !order.is_lt() && these.len() > those.len() {
+                    return Ordering::Greater;
+                }
                 order
             }
         }
@@ -201,7 +216,7 @@ fn process_packets(reader: impl BufRead) -> Result<usize, Box<dyn Error>> {
         let packet2 = parse_packet(&lines.next().expect("eof")?);
 
         if !packet1.is_lesser(&packet2).is_gt() {
-            running_total += dbg!(index);
+            running_total += index;
         }
     }
 
@@ -252,6 +267,10 @@ mod tests {
 [1,[2,[3,[4,[5,6,0]]]],8,9]
 "#;
 
+    fn test_process_packets(s: &str) -> usize {
+        process_packets(BufReader::new(s.as_bytes())).unwrap()
+    }
+
     #[test]
     fn test_part1() {
         let sum_of_indexes = process_packets(BufReader::new(INPUT.as_bytes())).unwrap();
@@ -260,94 +279,110 @@ mod tests {
 
     #[test]
     fn test_part1_each_packet() {
-        let process_packets = |s: &str| process_packets(BufReader::new(s.as_bytes()));
-
         assert_eq!(
-            process_packets(
+            test_process_packets(
                 r#"
 [1,1,3,1,1]
 [1,1,5,1,1]
 "#
-            )
-            .unwrap(),
+            ),
             1
         );
 
         assert_eq!(
-            process_packets(
+            test_process_packets(
                 r#"
 [[1],[2,3,4]]
 [[1],4]
 "#
-            )
-            .unwrap(),
+            ),
             1
         );
 
         assert_eq!(
-            process_packets(
+            test_process_packets(
                 r#"
 [9]
 [[8,7,6]]
 "#
-            )
-            .unwrap(),
+            ),
             0
         );
 
         assert_eq!(
-            process_packets(
+            test_process_packets(
                 r#"
 [[4,4],4,4]
 [[4,4],4,4,4]
 "#
-            )
-            .unwrap(),
+            ),
             1
         );
 
         assert_eq!(
-            process_packets(
+            test_process_packets(
                 r#"
 [7,7,7,7]
 [7,7,7]
 "#
-            )
-            .unwrap(),
+            ),
             0
         );
 
         assert_eq!(
-            process_packets(
+            test_process_packets(
                 r#"
 []
 [3]
 "#
-            )
-            .unwrap(),
+            ),
             1
         );
 
         assert_eq!(
-            process_packets(
+            test_process_packets(
                 r#"
 [[[]]]
 [[]]
 "#
-            )
-            .unwrap(),
+            ),
             0
         );
 
         assert_eq!(
-            process_packets(
+            test_process_packets(
                 r#"
 [1,[2,[3,[4,[5,6,7]]]],8,9]
 [1,[2,[3,[4,[5,6,0]]]],8,9]
 "#
-            )
-            .unwrap(),
+            ),
             0
+        );
+    }
+
+    #[test]
+    fn test_maybe_match() {
+        assert_eq!(
+            test_process_packets(
+                r#"
+[[10,[6,6,0,[7,10,3,9,0]],[4]],[],[2,[2,0,4,4],[[8,0,10,0,4]]],[[[5,3,7,2,10],[6,6,5,0],[6,3,4],5]],[[8]]]
+[[[[3,6,5,7,6],7],[],2,3],[6],[1,[5,1,9,[7,5,6,7,9],10],9],[10,[9],5,[[1],[0,2,6,5,9],[4,2,4,5],[1,1,8],4],[]],[[2],6,[[2,3,3,8,3]],[2,4],[1,[8],10,[4,0,7],[1,5,2,6,10]]]]
+"#
+            ),
+            1
+        );
+    }
+
+    #[test]
+    fn test_maybe_match2() {
+        assert_eq!(
+            test_process_packets(
+                r#"
+[[],[8,1,0],[[[7,4],5,6,1,[]]],[8,0,[[9,2,6,7]]]]
+[[[0,[10,5,7,10,6],6],[],6,4,[8]],[8,8,[4,[6,1],[6,9,8,10,10],1,0]],[3]]
+"#
+            ),
+            1
         );
     }
 }
