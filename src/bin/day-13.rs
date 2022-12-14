@@ -148,9 +148,11 @@ impl Packet {
         match (self, other) {
             (Packet::Literal(this), Packet::Literal(that)) => this.cmp(that),
             (this @ Packet::Literal(_), other @ Packet::List(_list)) => {
+                println!("=LIST= {this:?} =OO= {other:?}");
                 Packet::List(vec![this.clone()]).is_lesser(other)
             }
             (this @ Packet::List(_), other @ Packet::Literal(_)) => {
+                println!("=SS= {this:?} =LIST= {other:?}");
                 this.is_lesser(&Packet::List(vec![other.clone()]))
             }
             (Packet::List(these), Packet::List(those)) => {
