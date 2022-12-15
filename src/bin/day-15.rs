@@ -223,7 +223,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let reader = BufReader::new(File::open(filename)?);
     let sensors = parse_sensors(reader);
-    let empty_spaces = count_spaces_in_range(&sensors, 10);
+    let empty_spaces = count_spaces_in_range(&sensors, 2000000);
 
     println!("part1, spaces without beacon: {empty_spaces}");
 
