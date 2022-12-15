@@ -95,16 +95,13 @@
 //! Consult the report from the sensors you just deployed. In the row where y=2000000, how many positions cannot contain a beacon?
 //!
 
-use std::collections::BTreeSet;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use clap::Parser;
-use nom::sequence::{preceded, tuple};
+use nom::sequence::preceded;
 use nom::{bytes::complete::tag, character, IResult};
-
-const SAND_START: Point = Point { x: 500, y: 0 };
 
 /// Cli
 #[derive(Debug, Parser)]
@@ -200,16 +197,19 @@ fn count_spaces_in_range(sensors: &[Sensor], y: isize) -> usize {
                 sensor.closest_beacon.0.x,
             ]
         })
-        .min()
+        .max()
         .expect("no x coords");
 
     let mut excluded_spaces_count = 0;
     for x in x_min..=x_max {
         let point = Point { x, y };
-        excluded_spaces_count += sensors
+        if sensors
             .iter()
-            .filter(|sensor| dbg!(sensor.range()) > dbg!(sensor.location.distance(&point)))
-            .count();
+            .filter(|sensor| sensor.closest_beacon.0 != point)
+            .any(|sensor| sensor.location.distance(&point) <= sensor.range())
+        {
+            excluded_spaces_count += 1;
+        };
     }
 
     excluded_spaces_count
@@ -222,6 +222,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let filename = &args.file;
 
     let reader = BufReader::new(File::open(filename)?);
+    let sensors = parse_sensors(reader);
+    let empty_spaces = count_spaces_in_range(&sensors, 10);
+
+    println!("part1, spaces without beacon: {empty_spaces}");
 
     Ok(())
 }
@@ -250,6 +254,18 @@ Sensor at x=20, y=1: closest beacon is at x=15, y=3
     #[test]
     fn test_parse() {
         parse_sensors(BufReader::new(INPUT.as_bytes()));
+    }
+
+    #[test]
+    fn test_distance() {
+        assert_eq!(
+            Sensor {
+                location: Point { x: 8, y: 7 },
+                closest_beacon: Beacon(Point { x: 2, y: 10 }),
+            }
+            .range(),
+            9
+        );
     }
 
     #[test]
