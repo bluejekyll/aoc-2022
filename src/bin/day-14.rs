@@ -111,6 +111,41 @@
 //! ~..........
 //! ~..........
 //! Using your scan, simulate the falling sand. How many units of sand come to rest before sand starts flowing into the abyss below?
+//!
+//! --- Part Two ---
+//! You realize you misread the scan. There isn't an endless void at the bottom of the scan - there's floor, and you're standing on it!
+//!
+//! You don't have time to scan the floor, so assume the floor is an infinite horizontal line with a y coordinate equal to two plus the highest y coordinate of any point in your scan.
+//!
+//! In the example above, the highest y coordinate of any point is 9, and so the floor is at y=11. (This is as if your scan contained one extra rock path like -infinity,11 -> infinity,11.) With the added floor, the example above now looks like this:
+//!
+//!         ...........+........
+//!         ....................
+//!         ....................
+//!         ....................
+//!         .........#...##.....
+//!         .........#...#......
+//!         .......###...#......
+//!         .............#......
+//!         .............#......
+//!         .....#########......
+//!         ....................
+//! <-- etc #################### etc -->
+//! To find somewhere safe to stand, you'll need to simulate falling sand until a unit of sand comes to rest at 500,0, blocking the source entirely and stopping the flow of sand into the cave. In the example above, the situation finally looks like this after 93 units of sand come to rest:
+//!
+//! ............o............
+//! ...........ooo...........
+//! ..........ooooo..........
+//! .........ooooooo.........
+//! ........oo#ooo##o........
+//! .......ooo#ooo#ooo.......
+//! ......oo###ooo#oooo......
+//! .....oooo.oooo#ooooo.....
+//! ....oooooooooo#oooooo....
+//! ...ooo#########ooooooo...
+//! ..ooooo.......ooooooooo..
+//! #########################
+//! Using your scan, simulate the falling sand until the source of the sand becomes blocked. How many units of sand come to rest?
 
 use std::collections::BTreeSet;
 use std::error::Error;
@@ -291,6 +326,32 @@ impl Cave {
         }
     }
 
+    fn with_floor(rocks: Vec<Rock>, below_max: usize) -> Self {
+        let this = Self::new(rocks);
+        let Cave {
+            max_depth,
+            min_x: _,
+            max_x: _,
+            mut rocks,
+            sand: _,
+        } = this;
+
+        let floor = max_depth + below_max;
+
+        rocks.push(Rock::new(vec![
+            Point {
+                x: usize::MIN,
+                y: floor,
+            },
+            Point {
+                x: usize::MAX,
+                y: floor,
+            },
+        ]));
+
+        Self::new(rocks)
+    }
+
     // true if the space is free, false if not, None if off the board (past the maximal values)
     fn maybe_free(&self, point: &Point) -> Option<bool> {
         if point.x > self.max_x || point.x < self.min_x || point.y > self.max_depth {
@@ -355,7 +416,14 @@ impl Cave {
                 }
             }
 
-            assert!(self.sand.insert(point));
+            assert!(
+                self.sand.insert(point.clone()),
+                "point already existed: {point:?}"
+            );
+
+            if point == SAND_START {
+                return;
+            }
         }
     }
 
@@ -377,6 +445,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let amount_of_sand = cave.sand_count();
     println!("part1, how much sand: {amount_of_sand}");
+
+    let reader = BufReader::new(File::open(filename)?);
+    let rocks = parse_rocks(BufReader::new(reader));
+    let mut cave = Cave::with_floor(rocks, 2);
+    cave.drop_sand();
+
+    let amount_of_sand = cave.sand_count();
+    println!("part2, how much sand: {amount_of_sand}");
 
     Ok(())
 }
@@ -411,5 +487,14 @@ mod tests {
 
         cave.drop_sand();
         assert_eq!(cave.sand_count(), 24);
+    }
+
+    #[test]
+    fn test_part2() {
+        let rocks = parse_rocks(BufReader::new(INPUT.as_bytes()));
+        let mut cave = Cave::with_floor(rocks, 2);
+
+        cave.drop_sand();
+        assert_eq!(cave.sand_count(), 93);
     }
 }
