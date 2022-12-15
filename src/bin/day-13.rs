@@ -176,19 +176,25 @@ impl std::fmt::Debug for Packet {
     }
 }
 
-impl Packet {
-    fn is_lesser(&self, other: &Self) -> Ordering {
+impl PartialOrd for Packet {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Packet {
+    fn cmp(&self, other: &Self) -> Ordering {
         match (self, other) {
             (Packet::Literal(this), Packet::Literal(that)) => this.cmp(that),
             (this @ Packet::Literal(_), other @ Packet::List(_list)) => {
-                Packet::List(vec![this.clone()]).is_lesser(other)
+                Packet::List(vec![this.clone()]).cmp(other)
             }
             (this @ Packet::List(_), other @ Packet::Literal(_)) => {
-                this.is_lesser(&Packet::List(vec![other.clone()]))
+                this.cmp(&Packet::List(vec![other.clone()]))
             }
             (Packet::List(these), Packet::List(those)) => {
                 for (this, that) in these.iter().zip(those.iter()) {
-                    match this.is_lesser(that) {
+                    match this.cmp(that) {
                         Ordering::Greater => return Ordering::Greater,
                         Ordering::Less => return Ordering::Less,
                         Ordering::Equal => (), // continue
@@ -236,12 +242,42 @@ fn process_packets(reader: impl BufRead) -> Result<usize, Box<dyn Error>> {
         let packet1 = parse_packet(&line);
         let packet2 = parse_packet(&lines.next().expect("eof")?);
 
-        if !packet1.is_lesser(&packet2).is_gt() {
+        if !packet1.cmp(&packet2).is_gt() {
             running_total += index;
         }
     }
 
     Ok(running_total)
+}
+
+fn parse_and_sort_packets(reader: impl BufRead) -> Result<Vec<Packet>, Box<dyn Error>> {
+    let lines = reader.lines();
+
+    let mut packets = lines
+        .into_iter()
+        .map(|line| line.expect("bad data"))
+        .filter(|line| !line.is_empty())
+        .map(|line| parse_packet(&line))
+        .collect::<Vec<Packet>>();
+
+    packets.push(Packet::List(vec![Packet::List(vec![Packet::Literal(2)])]));
+    packets.push(Packet::List(vec![Packet::List(vec![Packet::Literal(6)])]));
+
+    packets.sort_unstable();
+
+    Ok(packets)
+}
+
+fn product_of_dividers(packets: Vec<Packet>) -> usize {
+    packets
+        .iter()
+        .enumerate()
+        .filter(|(_, packet)| {
+            **packet == Packet::List(vec![Packet::List(vec![Packet::Literal(2)])])
+                || **packet == Packet::List(vec![Packet::List(vec![Packet::Literal(6)])])
+        })
+        .map(|(idx, _)| idx + 1)
+        .product()
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -254,6 +290,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let answer = process_packets(reader)?;
 
     println!("part 1 sum of indexes: {answer}");
+
+    let reader = BufReader::new(File::open(filename)?);
+    let packets = parse_and_sort_packets(reader)?;
+
+    let product = product_of_dividers(packets);
+    println!("part 2 product of dividers: {product}");
 
     Ok(())
 }
@@ -288,6 +330,32 @@ mod tests {
 [1,[2,[3,[4,[5,6,0]]]],8,9]
 "#;
 
+    const INPUT2: &str = r#"
+[1,1,3,1,1]
+[1,1,5,1,1]
+
+[[1],[2,3,4]]
+[[1],4]
+
+[9]
+[[8,7,6]]
+
+[[4,4],4,4]
+[[4,4],4,4,4]
+
+[7,7,7,7]
+[7,7,7]
+
+[]
+[3]
+
+[[[]]]
+[[]]
+
+[1,[2,[3,[4,[5,6,7]]]],8,9]
+[1,[2,[3,[4,[5,6,0]]]],8,9]
+"#;
+
     fn test_process_packets(s: &str) -> usize {
         process_packets(BufReader::new(s.as_bytes())).unwrap()
     }
@@ -296,6 +364,13 @@ mod tests {
     fn test_part1() {
         let sum_of_indexes = process_packets(BufReader::new(INPUT.as_bytes())).unwrap();
         assert_eq!(sum_of_indexes, 13);
+    }
+
+    #[test]
+    fn test_part2() {
+        let packets = parse_and_sort_packets(BufReader::new(INPUT2.as_bytes())).unwrap();
+
+        assert_eq!(product_of_dividers(packets), 140);
     }
 
     #[test]
