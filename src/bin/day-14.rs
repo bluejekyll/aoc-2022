@@ -112,14 +112,16 @@
 //! ~..........
 //! Using your scan, simulate the falling sand. How many units of sand come to rest before sand starts flowing into the abyss below?
 
-use std::cmp::Ordering;
+use std::collections::BTreeSet;
 use std::error::Error;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 
 use clap::Parser;
-use nom::sequence::{delimited, tuple};
-use nom::{branch::alt, bytes::complete::tag, character, IResult};
+use nom::sequence::tuple;
+use nom::{bytes::complete::tag, character, IResult};
+
+const SAND_START: Point = Point { x: 500, y: 0 };
 
 /// Cli
 #[derive(Debug, Parser)]
@@ -136,8 +138,87 @@ struct Point {
     y: usize,
 }
 
+impl Point {
+    fn down(&self) -> Point {
+        let mut down = self.clone();
+        down.y += 1;
+        down
+    }
+
+    fn down_and_left(&self) -> Point {
+        let mut left = self.clone();
+        left.y += 1;
+        left.x -= 1;
+        left
+    }
+
+    fn down_and_right(&self) -> Point {
+        let mut right = self.clone();
+        right.y += 1;
+        right.x += 1;
+        right
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct Line(Vec<Point>);
+enum Next {
+    Free(Point),
+    Blocked,
+    EndlessVoid,
+}
+
+impl Next {
+    fn or_else<F: FnOnce() -> Next>(self, f: F) -> Next {
+        match self {
+            Next::Blocked => f(),
+            next => next,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct Rock {
+    line: Vec<Point>,
+    max_x: usize,
+    min_x: usize,
+    max_y: usize,
+}
+
+impl Rock {
+    fn new(line: Vec<Point>) -> Self {
+        let max_x = line.iter().map(|point| point.x).max().expect("no x coords");
+        let min_x = line.iter().map(|point| point.x).min().expect("no x coords");
+        let max_y = line.iter().map(|point| point.y).max().expect("no y coords");
+
+        Self {
+            line,
+            max_x,
+            min_x,
+            max_y,
+        }
+    }
+
+    fn contains(&self, point: &Point) -> bool {
+        let cmp_axis = |a1: usize, a2: usize, p: usize| -> bool {
+            (a1 <= a2 && p >= a1 && p <= a2) || (a2 <= a1 && p >= a2 && p <= a1)
+        };
+
+        if point.x >= self.min_x && point.x <= self.max_x && point.y <= self.max_y {
+            for i in 1..self.line.len() {
+                let vertex1 = &self.line[i - 1];
+                let vertex2 = &self.line[i];
+
+                if cmp_axis(vertex1.x, vertex2.x, point.x)
+                    && cmp_axis(vertex1.y, vertex2.y, point.y)
+                {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+}
 
 // 498,4
 fn parse_point(input: &str) -> IResult<&str, Point> {
@@ -157,19 +238,130 @@ fn parse_point(input: &str) -> IResult<&str, Point> {
 }
 
 // 498,4 -> 498,6 -> 496,6
-fn parse_line(input: &str) -> IResult<&str, Line> {
+fn parse_rock(input: &str) -> IResult<&str, Rock> {
     let (input, points) = nom::multi::separated_list1(tag(" -> "), parse_point)(input)?;
 
-    Ok((input, Line(points)))
+    Ok((input, Rock::new(points)))
 }
 
-fn parse_lines(reader: impl BufRead) -> Vec<Line> {
+fn parse_rocks(reader: impl BufRead) -> Vec<Rock> {
     reader
         .lines()
         .filter_map(|s| s.ok())
         .filter(|s| !s.is_empty())
-        .map(|s| parse_line(&s).expect("invalid data").1)
+        .map(|s| parse_rock(&s).expect("invalid data").1)
         .collect()
+}
+
+struct Cave {
+    max_depth: usize,
+    min_x: usize,
+    max_x: usize,
+    rocks: Vec<Rock>,
+    sand: BTreeSet<Point>,
+}
+
+impl Cave {
+    fn new(rocks: Vec<Rock>) -> Self {
+        let max_x = rocks
+            .iter()
+            .map(|rock| rock.max_x)
+            .max()
+            .expect("no x coords");
+        let min_x = rocks
+            .iter()
+            .map(|rock| rock.min_x)
+            .min()
+            .expect("no x coords");
+
+        let max_depth = rocks
+            .iter()
+            .map(|rock| rock.max_y)
+            .max()
+            .expect("no y coords");
+
+        let sand = BTreeSet::new();
+
+        Cave {
+            max_depth,
+            max_x,
+            min_x,
+            rocks,
+            sand,
+        }
+    }
+
+    // true if the space is free, false if not, None if off the board (past the maximal values)
+    fn maybe_free(&self, point: &Point) -> Option<bool> {
+        if point.x > self.max_x || point.x < self.min_x || point.y > self.max_depth {
+            return None;
+        }
+
+        if self.sand.contains(point) {
+            return Some(false);
+        }
+
+        for rock in &self.rocks {
+            if rock.contains(point) {
+                return Some(false);
+            }
+        }
+
+        Some(true)
+    }
+
+    fn can_drop_inner(&self, to: Point) -> Next {
+        if let Some(free) = self.maybe_free(&to) {
+            if free {
+                Next::Free(to)
+            } else {
+                Next::Blocked
+            }
+        } else {
+            Next::EndlessVoid
+        }
+    }
+
+    fn can_drop_down(&self, from: &Point) -> Next {
+        let to = from.down();
+        self.can_drop_inner(to)
+    }
+
+    fn can_drop_left(&self, from: &Point) -> Next {
+        let to = from.down_and_left();
+        self.can_drop_inner(to)
+    }
+
+    fn can_drop_right(&self, from: &Point) -> Next {
+        let to = from.down_and_right();
+        self.can_drop_inner(to)
+    }
+
+    fn can_drop(&self, from: &Point) -> Next {
+        self.can_drop_down(from)
+            .or_else(|| self.can_drop_left(from))
+            .or_else(|| self.can_drop_right(from))
+    }
+
+    fn drop_sand(&mut self) {
+        loop {
+            let mut point = SAND_START;
+
+            loop {
+                match self.can_drop(&point) {
+                    Next::Free(next) => point = next,
+                    Next::Blocked => break,
+                    Next::EndlessVoid => return,
+                }
+            }
+
+            assert!(self.sand.insert(point));
+        }
+    }
+
+    fn sand_count(&self) -> usize {
+        self.sand.len()
+    }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -179,6 +371,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let filename = &args.file;
 
     let reader = BufReader::new(File::open(filename)?);
+    let rocks = parse_rocks(BufReader::new(reader));
+    let mut cave = Cave::new(rocks);
+    cave.drop_sand();
+
+    let amount_of_sand = cave.sand_count();
+    println!("part1, how much sand: {amount_of_sand}");
 
     Ok(())
 }
@@ -193,10 +391,25 @@ mod tests {
 "#;
 
     #[test]
+    fn test_rock_contains() {
+        let rock = Rock::new(vec![Point { x: 502, y: 9 }, Point { x: 494, y: 9 }]);
+        assert!(rock.contains(&Point { x: 500, y: 9 }));
+    }
+
+    #[test]
     fn test_parse() {
-        let lines = parse_lines(BufReader::new(INPUT.as_bytes()));
+        let lines = parse_rocks(BufReader::new(INPUT.as_bytes()));
         assert_eq!(lines.len(), 2);
-        assert_eq!(lines[0].0.len(), 3);
-        assert_eq!(lines[1].0.len(), 4);
+        assert_eq!(lines[0].line.len(), 3);
+        assert_eq!(lines[1].line.len(), 4);
+    }
+
+    #[test]
+    fn test_part1() {
+        let rocks = parse_rocks(BufReader::new(INPUT.as_bytes()));
+        let mut cave = Cave::new(rocks);
+
+        cave.drop_sand();
+        assert_eq!(cave.sand_count(), 24);
     }
 }
