@@ -211,6 +211,14 @@ fn is_excluded(sensors: &[Sensor], beacons: &[Beacon], point: &Point) -> bool {
         .any(|sensor| sensor.location.distance(&point) <= sensor.range())
 }
 
+fn is_excluded2(sensors: &[Sensor], point: &Point) -> Option<Sensor> {
+    sensors
+        .iter()
+        .filter(|sensor| sensor.closest_beacon.0 != *point)
+        .find(|sensor| sensor.location.distance(&point) <= sensor.range())
+        .cloned()
+}
+
 fn count_spaces_in_range(sensors: &[Sensor], beacons: &[Beacon], y: isize) -> usize {
     // get min and max of x to get grid size...
     let x_min = sensors
@@ -245,6 +253,64 @@ fn count_spaces_in_range(sensors: &[Sensor], beacons: &[Beacon], y: isize) -> us
     excluded_spaces_count
 }
 
+fn locate_distress_beacon2(
+    sensors: &[Sensor],
+    beacons: &[Beacon],
+    x_and_y_range: Range<isize>,
+) -> Option<Beacon> {
+    x_and_y_range
+        .clone()
+        .into_par_iter()
+        .find_map_first(|y| {
+            if y as usize % 1000 == 0 {
+                dbg!(y);
+            }
+            let mut x = x_and_y_range.clone().min().expect("no min");
+
+            while x < x_and_y_range.clone().max().expect("no max") {
+                let point = Point { x, y };
+                if let Some(sensor) = is_excluded2(sensors, &point) {
+                    if sensor.location.x > x {
+                        // skip to the furthest stop on x
+                        x += sensor.range() as isize - sensor.location.y.abs_diff(y) as isize;
+                    } else {
+                        x += 1;
+                    }
+                } else {
+                    if !beacons.contains(&Beacon(point.clone())) {
+                        return Some(point);
+                    } else {
+                        x += 1;
+                    }
+                }
+            }
+            None
+
+            // for x in x_and_y_range
+            // .clone()
+
+            // x_and_y_range
+            //     .clone()
+            //     .into_iter()
+            //     .map(|x| Point { x, y })
+            //     .find(|point| {
+            //         !beacons.contains(&Beacon((point).clone()))
+            //             && !is_excluded(sensors, beacons, point)
+            //     })
+        })
+        .map(|point| Beacon(point))
+
+    // x_and_y_range
+    //     .clone()
+    //     .flat_map(|x| x_and_y_range.clone().map(move |y| Point { x, y }))
+    //     .into_iter()
+    //     .find(|point| {
+    //         !beacons.contains(&Beacon((*point).clone())) && !is_excluded(sensors, beacons, point)
+    //     })
+    //     .map(|point| Beacon(point.clone()))
+}
+
+#[allow(unused)]
 fn locate_distress_beacon(
     sensors: &[Sensor],
     beacons: &[Beacon],
@@ -283,6 +349,11 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let reader = BufReader::new(File::open(filename)?);
     let sensors = parse_sensors(reader);
+
+    for sensor in &sensors {
+        println!("Sensor {:?} has range {}", sensor.location, sensor.range());
+    }
+
     let beacons = get_beacons(&sensors);
     let empty_spaces = count_spaces_in_range(&sensors, &beacons, 2000000);
 
@@ -291,7 +362,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let reader = BufReader::new(File::open(filename)?);
     let sensors = parse_sensors(reader);
     let beacons = get_beacons(&sensors);
-    let beacon = locate_distress_beacon(&sensors, &beacons, 0..4000000).expect("no beacon");
+    //let beacon = locate_distress_beacon(&sensors, &beacons, 0..4000000).expect("no beacon");
+    let beacon = locate_distress_beacon2(&sensors, &beacons, 0..4000000).expect("no beacon");
     let frequency = beacon.frequency();
 
     println!("part2, distress beacon frequency: {frequency}");
@@ -349,6 +421,15 @@ Sensor at x=20, y=1: closest beacon is at x=15, y=3
         let sensors = parse_sensors(BufReader::new(INPUT.as_bytes()));
         let beacons = get_beacons(&sensors);
         let beacon = locate_distress_beacon(&sensors, &beacons, 0..20).expect("no beacon");
+        assert_eq!(beacon.0, Point { x: 14, y: 11 });
+        assert_eq!(beacon.frequency(), 56000011);
+    }
+
+    #[test]
+    fn test_part2_optimized() {
+        let sensors = parse_sensors(BufReader::new(INPUT.as_bytes()));
+        let beacons = get_beacons(&sensors);
+        let beacon = locate_distress_beacon2(&sensors, &beacons, 0..20).expect("no beacon");
         assert_eq!(beacon.0, Point { x: 14, y: 11 });
         assert_eq!(beacon.frequency(), 56000011);
     }
